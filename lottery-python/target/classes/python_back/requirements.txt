@@ -1,0 +1,28 @@
+# 双色球完整多层融合模型依赖 - 真实版本
+
+# 基础数据处理
+numpy>=1.21.0
+pandas>=1.3.0
+scikit-learn>=1.0.0
+
+# 传统机器学习
+xgboost>=1.5.0
+
+# 深度学习 - LSTM (TensorFlow/Keras)
+tensorflow>=2.8.0
+keras>=2.8.0
+
+# 深度学习 - Transformer (PyTorch)
+torch>=1.10.0
+torchvision>=0.11.0
+
+# 其他可选模型
+catboost>=1.0.0
+
+# 数据可视化（可选）
+matplotlib>=3.4.0
+seaborn>=0.11.0
+
+# 工具库
+joblib>=1.1.0
+tqdm>=4.62.0

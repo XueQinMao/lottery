@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="WARN">
+    <Properties>
+        <Property name="LOG_HOME">logs</Property>
+        <Property name="FILE_NAME">lottery</Property>
+    </Properties>
+
+    <Appenders>
+        <!-- 控制台输出 -->
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout pattern="[%d{yyyy-MM-dd HH:mm:ss}][%t][%p][%c{1}:%L] %m%n"/>
+        </Console>
+
+        <!-- 按天滚动的日志文件 -->
+        <RollingFile name="DailyRollingFile"
+                     fileName="${LOG_HOME}/${FILE_NAME}.log"
+                     filePattern="${LOG_HOME}/$${date:yyyy-MM}/${FILE_NAME}-%d{yyyy-MM-dd}-%i.log.gz">
+            <PatternLayout pattern="[%d{yyyy-MM-dd HH:mm:ss}][%t][%p][%c{1}:%L] %m%n"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy interval="1" modulate="true"/>
+                <SizeBasedTriggeringPolicy size="10MB"/>
+            </Policies>
+            <DefaultRolloverStrategy max="30"/>
+        </RollingFile>
+
+        <!-- 错误日志单独输出 -->
+        <RollingFile name="ErrorFile"
+                     fileName="${LOG_HOME}/lottery_error.log"
+                     filePattern="${LOG_HOME}/error/lottery_error-%d{yyyy-MM-dd}-%i.log.gz">
+            <ThresholdFilter level="ERROR" onMatch="ACCEPT" onMismatch="DENY"/>
+            <PatternLayout pattern="[%d{yyyy-MM-dd HH:mm:ss}][%t][%p][%c{1}:%L] %m%n"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy interval="1" modulate="true"/>
+                <SizeBasedTriggeringPolicy size="10MB"/>
+            </Policies>
+        </RollingFile>
+
+        <!-- 新增预测结果日志文件 -->
+        <RollingFile name="PredictRecordFile"
+                     fileName="${LOG_HOME}/predict_logs.log"
+                     filePattern="${LOG_HOME}/predict_logs-%d{yyyy-MM-dd}-%i.log.gz">
+            <PatternLayout pattern="[%d{yyyy-MM-dd HH:mm:ss}][%t] %m%n"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy interval="1" modulate="true"/>
+                <SizeBasedTriggeringPolicy size="1000MB"/>
+            </Policies>
+            <DefaultRolloverStrategy max="300"/>
+        </RollingFile>
+    </Appenders>
+
+    <Loggers>
+        <!-- 自定义包日志级别 -->
+        <Logger name="com.my.project" level="INFO"/>
+
+        <Logger name="predict.logs" level="DEBUG" additivity="false">
+            <AppenderRef ref="PredictRecordFile"/>
+        </Logger>
+
+        <!-- 根日志器 -->
+        <Root level="INFO">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="DailyRollingFile"/>
+            <AppenderRef ref="ErrorFile"/>
+        </Root>
+    </Loggers>
+</Configuration>

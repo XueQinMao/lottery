@@ -1,0 +1,38 @@
+logging:
+  config: classpath:log4j2-spring.xml
+server:
+    port: 8866
+spring:
+  application:
+    name: lottery
+  datasource:
+    ##url: jdbc:mariadb://10.22.36.120:8833/lottery?useSSL=false&serverTimezone=UTC
+    url: jdbc:mariadb://192.168.31.103:8833/lottery?useSSL=false&serverTimezone=UTC
+    username: root
+    password: 5F52uA8npe
+    driver-class-name: org.mariadb.jdbc.Driver
+  # DeepSeek 官方平台（https://platform.deepseek.com 申请 API Key）
+  # 不要用 spring.ai.dashscope —— 那是阿里云百炼
+  ai:
+    model:
+      chat: deepseek
+    deepseek:
+      api-key: ${DEEPSEEK_API_KEY:xxxx}
+      base-url: https://api.deepseek.com
+      chat:
+        options:
+          model: deepseek-v4-pro
+          temperature: 0.3
+mybatis-plus:
+  configuration:
+    #log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    map-underscore-to-camel-case: true
+  mapper-locations: classpath*:mapper/**/*.xml
+lottery:
+  model:
+    path: E:\home\python\
+    csv:
+      ml: ml_features.csv
+      sequence: sequence_features.csv
+      markov: markov_features.csv
+      history: history.csv
