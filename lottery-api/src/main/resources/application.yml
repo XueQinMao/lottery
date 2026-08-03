@@ -6,8 +6,7 @@ spring:
   application:
     name: lottery
   datasource:
-    ##url: jdbc:mariadb://10.22.36.120:8833/lottery?useSSL=false&serverTimezone=UTC
-    url: jdbc:mariadb://192.168.31.103:8833/lottery?useSSL=false&serverTimezone=UTC
+    url: jdbc:mariadb://10.22.36.120:8833/lottery?useSSL=false&serverTimezone=UTC
     username: root
     password: 5F52uA8npe
     driver-class-name: org.mariadb.jdbc.Driver
@@ -22,7 +21,7 @@ spring:
       chat:
         options:
           model: deepseek-v4-pro
-          temperature: 0.3
+          temperature: 0.9
 mybatis-plus:
   configuration:
     #log-impl: org.apache.ibatis.logging.stdout.StdOutImpl

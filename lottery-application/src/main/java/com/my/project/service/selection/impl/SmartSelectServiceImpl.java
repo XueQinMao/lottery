@@ -15,7 +15,6 @@ import com.my.project.service.predict.IPredictCacheService;
 import com.my.project.service.predict.IPredictRecordService;
 import com.my.project.service.selection.IBuyRecordService;
 import com.my.project.service.selection.ISmartSelectService;
-import com.my.project.service.selection.enums.BuyRecordTypeEnums;
 import com.my.project.service.selection.pojo.bo.PredictedFeaturesBo;
 import com.my.project.service.selection.pojo.bo.ScoredCandidateBo;
 import com.my.project.service.selection.pojo.bo.WeightConfigBo;
@@ -90,7 +89,7 @@ public class SmartSelectServiceImpl implements ISmartSelectService {
     /** 权重/分桶分析使用的命中样本上限 */
     private static final int HIT_SAMPLE_LIMIT = 50;
     /** 纳入分析的最高奖级（1=一等奖，放宽到 3 以扩大样本） */
-    private static final int HIT_LEVEL_MAX = 3;
+    private static final int HIT_LEVEL_MAX = 1;
     /** 历史期数（用于特征区间） */
     private static final int HISTORY_WINDOW = 100;
 
@@ -115,8 +114,8 @@ public class SmartSelectServiceImpl implements ISmartSelectService {
 
     @Override
     public void recommendFushi(LocalDate openDate, int budget) {
-        var config = getWeightConfig();
-        var historyDesc = historyRecordService.getLatestRecords(HISTORY_WINDOW);
+//        var config = getWeightConfig();
+//        var historyDesc = historyRecordService.getLatestRecords(HISTORY_WINDOW);
         // 1. 分层抽样扩大候选池（不全量进大模型）
         var candidateMaps = percentileSample(RANDOM_SELECTION_COUNT);
         if (candidateMaps.isEmpty()) {
@@ -126,48 +125,48 @@ public class SmartSelectServiceImpl implements ISmartSelectService {
         // 4. 仅持久化并调优 Top-N（约 ceil(topN/batch) 次 LLM）
         predictRecordService.saveBatch(candidateMaps, openDate);
 
-        var candidates = candidateMaps.entrySet().stream().map(entry -> {
-            String[] split = entry.getKey().split("\\|");
-            PredictRecord predictRecord = new PredictRecord();
-            predictRecord.setOpenDate(openDate);
-            predictRecord.setRedBalls(split[1]);
-            predictRecord.setBlueBall(Integer.parseInt(split[2]));
-            predictRecord.setTotalScore(entry.getValue().getProbability());
-            predictRecord.setExplanation(entry.getValue().getReason());
-            predictRecord.setCreateTime(LocalDateTime.now());
-            return predictRecord;
-        }).toList();
-        // 2. 本地统一打分 + Jaccard 多样性，收成少量 Top-N 再调 LLM
-        int topN = resolveLlmTopN(30);
-        List<PredictRecord> topCandidates = localScoreAndSelect(candidates, historyDesc, config, topN);
-        if (topCandidates.isEmpty()) {
-            log.warn("开奖日 {} 本地筛选后无候选，跳过智能选号", openDate);
-            return;
-        }
-        log.info("智能选号漏斗: sampled={}, llmTopN={}, openDate={}", candidateMaps.size(), topCandidates.size(), openDate);
-        // 3. 大模型特征分析（仅 1 次）
-        var drawRecords = CollectionUtils.emptyIfNull(historyDesc).stream().map(
-            h -> LotteryAnalysisReqBo.DrawRecord.builder().period(h.getPeriod())
-                .redBalls(List.of(h.getNum1(), h.getNum2(), h.getNum3(), h.getNum4(), h.getNum5(), h.getNum6()))
-                .blueBall(h.getSpecial()).build()).toList();
-        var report = lotteryAnalysisService.analyze(
-            LotteryAnalysisReqBo.builder().records(drawRecords).sampleSize(drawRecords.size()).build());
-
-        Function<String, List<Integer>> redBallsFunction =
-            p -> Arrays.stream(p.split(",")).map(Integer::parseInt).toList();
-        Function<PredictRecord, LotteryAdjustReqBo.PredictTicket> toTicket =
-            p -> LotteryAdjustReqBo.PredictTicket.builder().blueBall(p.getBlueBall())
-                .redBalls(redBallsFunction.apply(p.getRedBalls())).build();
-
-        ListUtils.partition(topCandidates, LLM_ADJUST_BATCH_SIZE).forEach(list -> {
-            var tickets = list.stream().map(toTicket).toList();
-            var req = LotteryAdjustReqBo.builder()
-                .analysisReportJson(JSON.toJSONString(report))
-                .tickets(tickets)
-                .build();
-            var adjust = lotteryAdjustService.adjust(req);
-            buyRecordService.batchSave(adjust, openDate, BuyRecordTypeEnums.AUTO);
-        });
+//        var candidates = candidateMaps.entrySet().stream().map(entry -> {
+//            String[] split = entry.getKey().split("\\|");
+//            PredictRecord predictRecord = new PredictRecord();
+//            predictRecord.setOpenDate(openDate);
+//            predictRecord.setRedBalls(split[1]);
+//            predictRecord.setBlueBall(Integer.parseInt(split[2]));
+//            predictRecord.setTotalScore(entry.getValue().getProbability());
+//            predictRecord.setExplanation(entry.getValue().getReason());
+//            predictRecord.setCreateTime(LocalDateTime.now());
+//            return predictRecord;
+//        }).toList();
+//        // 2. 本地统一打分 + Jaccard 多样性，收成少量 Top-N 再调 LLM
+//        int topN = resolveLlmTopN(30);
+//        List<PredictRecord> topCandidates = localScoreAndSelect(candidates, historyDesc, config, topN);
+//        if (topCandidates.isEmpty()) {
+//            log.warn("开奖日 {} 本地筛选后无候选，跳过智能选号", openDate);
+//            return;
+//        }
+//        log.info("智能选号漏斗: sampled={}, llmTopN={}, openDate={}", candidateMaps.size(), topCandidates.size(), openDate);
+//        // 3. 大模型特征分析（仅 1 次）
+//        var drawRecords = CollectionUtils.emptyIfNull(historyDesc).stream().map(
+//            h -> LotteryAnalysisReqBo.DrawRecord.builder().period(h.getPeriod())
+//                .redBalls(List.of(h.getNum1(), h.getNum2(), h.getNum3(), h.getNum4(), h.getNum5(), h.getNum6()))
+//                .blueBall(h.getSpecial()).build()).toList();
+//        var report = lotteryAnalysisService.analyze(
+//            LotteryAnalysisReqBo.builder().records(drawRecords).sampleSize(drawRecords.size()).build());
+//
+//        Function<String, List<Integer>> redBallsFunction =
+//            p -> Arrays.stream(p.split(",")).map(Integer::parseInt).toList();
+//        Function<PredictRecord, LotteryAdjustReqBo.PredictTicket> toTicket =
+//            p -> LotteryAdjustReqBo.PredictTicket.builder().blueBall(p.getBlueBall())
+//                .redBalls(redBallsFunction.apply(p.getRedBalls())).build();
+//
+//        ListUtils.partition(topCandidates, LLM_ADJUST_BATCH_SIZE).forEach(list -> {
+//            var tickets = list.stream().map(toTicket).toList();
+//            var req = LotteryAdjustReqBo.builder()
+//                .analysisReportJson(JSON.toJSONString(report))
+//                .tickets(tickets)
+//                .build();
+////            var adjust = lotteryAdjustService.adjust(req);
+////            buyRecordService.batchSave(adjust, openDate, BuyRecordTypeEnums.AUTO);
+//        });
     }
 
     /**

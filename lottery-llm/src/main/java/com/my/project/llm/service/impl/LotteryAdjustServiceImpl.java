@@ -15,7 +15,8 @@ import org.springframework.stereotype.Service;
  * LotteryAdjustServiceImpl
  *
  * <p>调用 DeepSeek：每组输出单式调整 + 组内复式，并额外输出一组最终可购买复式
- * （{@link LotteryAdjustRespBo#getFinalComplexTicket()}）。
+ * （{@link LotteryAdjustRespBo#getFinalComplexTicket()}）
+ * 与两组最终可购买单式（{@link LotteryAdjustRespBo#getFinalSingleTickets()}）。
  *
  * @author 刘强
  * @version 2026/07/22 11:50
@@ -38,7 +39,7 @@ public class LotteryAdjustServiceImpl implements ILotteryAdjustService {
         if (reqBo.getAnalysisReportJson() == null || reqBo.getAnalysisReportJson().isBlank()) {
             throw new IllegalArgumentException("特征分析报告不能为空");
         }
-        log.info("开始调用 DeepSeek 调优（单组复式+最终复式），候选组数: {}", reqBo.getTickets().size());
+        log.info("开始调用 DeepSeek 调优（单组复式+最终复式+最终单式），候选组数: {}", reqBo.getTickets().size());
 
         String ticketsJson = JSON.toJSONString(reqBo.getTickets());
 
@@ -52,11 +53,12 @@ public class LotteryAdjustServiceImpl implements ILotteryAdjustService {
 
         validateResult(result, reqBo.getTickets().size());
 
-        log.info("DeepSeek 调优完成: groups={}, finalRed={}, finalBlue={}, totalBets={}",
+        log.info("DeepSeek 调优完成: groups={}, finalRed={}, finalBlue={}, totalBets={}, singleTickets={}",
             CollectionUtils.size(result.getAdjustedTickets()),
             result.getFinalComplexTicket().getRedBalls(),
             result.getFinalComplexTicket().getBlueBalls(),
-            result.getFinalComplexTicket().getTotalBets());
+            result.getFinalComplexTicket().getTotalBets(),
+            CollectionUtils.size(result.getFinalSingleTickets()));
         return result;
     }
 
@@ -68,6 +70,22 @@ public class LotteryAdjustServiceImpl implements ILotteryAdjustService {
                 || CollectionUtils.isEmpty(result.getFinalComplexTicket().getRedBalls())
                 || CollectionUtils.isEmpty(result.getFinalComplexTicket().getBlueBalls())) {
             throw new IllegalStateException("大模型未返回有效的 finalComplexTicket（最终复式）");
+        }
+        if (CollectionUtils.isEmpty(result.getFinalSingleTickets())) {
+            throw new IllegalStateException("大模型未返回 finalSingleTickets（最终单式）");
+        }
+        if (result.getFinalSingleTickets().size() != 2) {
+            throw new IllegalStateException(
+                "finalSingleTickets 必须恰好 2 组，实际: " + result.getFinalSingleTickets().size());
+        }
+        long missingSingle = result.getFinalSingleTickets().stream()
+            .filter(t -> CollectionUtils.isEmpty(t.getRedBalls())
+                || t.getRedBalls().size() != 6
+                || t.getBlueBall() == null)
+            .count();
+        if (missingSingle > 0) {
+            throw new IllegalStateException(
+                "有 " + missingSingle + " 组 finalSingleTickets 未返回有效的 6 红 + 1 蓝");
         }
         if (CollectionUtils.isEmpty(result.getAdjustedTickets())) {
             throw new IllegalStateException("大模型未返回 adjustedTickets（含单组复式）");
@@ -113,8 +131,24 @@ public class LotteryAdjustServiceImpl implements ILotteryAdjustService {
                 "redBalls": [int],
                 "blueBalls": [int],
                 "totalBets": int,
-                "basis": "最终选号依据"
+                "basis": "最终复式选号依据"
               },
+              "finalSingleTickets": [
+                {
+                  "name": "最终单式名称(如热温延续单式/温冷回冷单式)",
+                  "redBalls": [int, int, int, int, int, int],
+                  "blueBall": int,
+                  "totalBets": 1,
+                  "basis": "本组单式针对的形态假设与冷热/分区/连号结构依据"
+                },
+                {
+                  "name": "第二组单式名称",
+                  "redBalls": [int, int, int, int, int, int],
+                  "blueBall": int,
+                  "totalBets": 1,
+                  "basis": "本组单式针对的形态假设与冷热/分区/连号结构依据"
+                }
+              ],
               "conclusion": "综合说明"
             }
             """;

@@ -11,6 +11,7 @@ import java.util.List;
  * <ul>
  *     <li>各组：单式调整 + 该组对应复式 {@link AdjustedTicket#complexTicket}</li>
  *     <li>全局：综合后的<strong>一组最终可购买复式</strong> {@link #finalComplexTicket}</li>
+ *     <li>全局：综合后的<strong>两组最终可购买单式</strong> {@link #finalSingleTickets}</li>
  * </ul>
  *
  * @author 刘强
@@ -29,6 +30,13 @@ public class LotteryAdjustRespBo {
      * <p>红球 7-10、蓝球 2-5，综合全部候选与特征报告生成。
      */
     private ComplexTicket finalComplexTicket;
+
+    /**
+     * 最终推荐购买的单式玩法（恰好 2 组）。
+     * <p>每组红球 6 个 + 蓝球 1 个，共 1 注；用于低成本对冲复式风险。
+     * 两组分别针对不同形态假设（如热温延续 / 温冷回冷）做精准聚焦。
+     */
+    private List<SingleTicket> finalSingleTickets;
 
     /** 综合调优 / 选号说明 */
     private String conclusion;
@@ -88,6 +96,24 @@ public class LotteryAdjustRespBo {
         /** 注数 = C(红球个数, 6) × 蓝球个数 */
         private Integer totalBets;
         /** 选号依据 */
+        private String basis;
+    }
+
+    /**
+     * 单式：红球 6 个 + 蓝球 1 个，共 1 注。
+     * <p>用于在最终复式之外，提供低成本、聚焦特定形态假设的可购买单组号码。
+     */
+    @Data
+    public static class SingleTicket {
+        /** 单式名称/说明（如"热温延续单式"、"温冷回冷单式"） */
+        private String name;
+        /** 红球（升序，恰好 6 个，1-33 互异） */
+        private List<Integer> redBalls;
+        /** 蓝球（恰好 1 个，1-16） */
+        private Integer blueBall;
+        /** 注数，恒为 1 */
+        private Integer totalBets;
+        /** 选号依据：说明本组针对的形态假设与冷热/分区/连号结构 */
         private String basis;
     }
 }

@@ -64,7 +64,7 @@ public class PredictServiceImpl implements IPredictService {
         var counter = new AtomicLong(startIndex);
         var handler = new DefaultPredictResultHandler(openDate, counter, log);
         var consumer = combinationConsumer(handler);
-        SsqCombinationUtils.generateNaturalRandom(3000000, consumer);
+        SsqCombinationUtils.generateNaturalRandom(10000000, consumer);
     }
 
     private Consumer<SsqCombinationBo> combinationConsumer(IPredictResultHandler handler) {
