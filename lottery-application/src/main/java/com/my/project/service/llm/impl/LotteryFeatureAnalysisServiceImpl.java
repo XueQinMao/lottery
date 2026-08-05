@@ -113,7 +113,7 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
             return LotteryAdjustReqBo.PredictTicket.builder().redBalls(redBalls).blueBall(Integer.valueOf(split[2]))
                 .build();
         }).toList();
-        var respBo = analyzeLatest(100);
+        var respBo = analyzeLatest(30);
 
         var adjustReqBo =
             LotteryAdjustReqBo.builder().analysisReportJson(JSONObject.toJSONString(respBo)).tickets(tickets).build();
