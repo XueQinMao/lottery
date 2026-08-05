@@ -1,12 +1,18 @@
 package com.my.project.api.controller;
 
+import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.my.project.api.pojo.resp.Result;
 import com.my.project.service.history.IHistoryRecordService;
 import com.my.project.service.history.pojo.dto.HistoryRecordDto;
+import com.my.project.service.history.pojo.vo.ColdHotTrendVo;
+import com.my.project.service.history.pojo.vo.FeatureStatsVo;
+import com.my.project.service.history.pojo.vo.PatternTrendVo;
+import com.my.project.service.history.pojo.vo.TrendAnalysisVo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 
 /**
  * HistoryRecordController
@@ -37,6 +43,97 @@ public class HistoryRecordController {
         @RequestParam(required = false, defaultValue = "0") int pageNum) {
         try {
             return Result.success(historyRecordService.findPage(new Page<>(pageNum, pageSize)));
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    /**
+     * 号码遗漏趋势分析。
+     * <p>基于 {@code LotteryTrendUtils} 计算反向指数与 MA5/MA10/MA20，供前端趋势图展示。
+     *
+     * @param ballType   red / blue，默认 red
+     * @param ball       号码（红 1-33，蓝 1-16），默认 1
+     * @param sampleSize 最近期数，默认 100（可选 30/50/100）
+     * @param endPeriod  截止期号（含该期往前推 sampleSize）；不传则最新
+     */
+    @GetMapping("/trend")
+    public Result<TrendAnalysisVo> analyzeTrend(
+        @RequestParam(required = false, defaultValue = "red") String ballType,
+        @RequestParam(required = false, defaultValue = "1") int ball,
+        @RequestParam(required = false, defaultValue = "100") int sampleSize,
+        @RequestParam(required = false) String endPeriod) {
+        try {
+            TrendAnalysisVo trendAnalysisVo = historyRecordService.analyzeTrend(ballType, ball, sampleSize, endPeriod);
+            System.out.println("trend"+JSON.toJSONString(trendAnalysisVo));
+            return Result.success(trendAnalysisVo);
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    /**
+     * 开奖形态统计：红球和值、跨度、和值相对上一期增长差值、质合比，以及红/蓝球奇偶比。
+     *
+     * @param sampleSize 最近期数，默认 100
+     * @param endPeriod  截止期号（含）；不传则最新
+     */
+    @GetMapping("/feature-stats")
+    public Result<FeatureStatsVo> analyzeFeatureStats(
+        @RequestParam(required = false, defaultValue = "100") int sampleSize,
+        @RequestParam(required = false) String endPeriod) {
+        try {
+            FeatureStatsVo featureStatsVo = historyRecordService.analyzeFeatureStats(sampleSize, endPeriod);
+            System.out.println("feature-stats"+JSON.toJSONString(featureStatsVo));
+            return Result.success(featureStatsVo);
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    /**
+     * 形态遗漏与超额指数。
+     * <p>指数 = 实际出现次数 − 理论出现次数（n × p）。
+     *
+     * @param feature    oddEven / bigSmall / primeComp / ratio012 / span / sumRange /
+     *                   sumTail / threeZone / zone1Count / zone2Count / zone3Count /
+     *                   blueOddEven / blueBigSmall / blueBigSmallOddEven / blueRatio012
+     * @param ratio      分桶键，如 1:5、0:4:2、21、73-78、奇、大、大奇、0路
+     * @param sampleSize 最近期数，默认 100
+     * @param endPeriod  截止期号（含）；不传则最新
+     */
+    @GetMapping("/pattern-trend")
+    public Result<PatternTrendVo> analyzePatternTrend(
+        @RequestParam(required = false, defaultValue = "oddEven") String feature,
+        @RequestParam(required = false, defaultValue = "3:3") String ratio,
+        @RequestParam(required = false, defaultValue = "100") int sampleSize,
+        @RequestParam(required = false) String endPeriod) {
+        try {
+            PatternTrendVo patternTrendVo =
+                historyRecordService.analyzePatternTrend(feature, ratio, sampleSize, endPeriod);
+            System.out.println("pattern-trend"+JSON.toJSONString(patternTrendVo));
+            return Result.success(patternTrendVo);
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    /**
+     * 每期开奖号码中"冷/温/热"号个数趋势。
+     * <p>对样本内每一期，取其前 30 期作为子样本调用 {@code ColdHotAnalysisUtils.calculate}
+     * 得到冷温热号清单，再统计本期实际开出的红球/蓝球落入各档的个数。
+     *
+     * @param sampleSize 展示期数，默认 100（每期需多取 30 期作为前置样本）
+     * @param endPeriod  截止期号（含）；不传则最新
+     */
+    @GetMapping("/cold-hot-trend")
+    public Result<ColdHotTrendVo> analyzeColdHotTrend(
+        @RequestParam(required = false, defaultValue = "100") int sampleSize,
+        @RequestParam(required = false) String endPeriod) {
+        try {
+            ColdHotTrendVo coldHotTrendVo = historyRecordService.analyzeColdHotTrend(sampleSize, endPeriod);
+            System.out.println("cold-hot-trend" + JSON.toJSONString(coldHotTrendVo));
+            return Result.success(coldHotTrendVo);
         } catch (Exception e) {
             return Result.error(e.getMessage());
         }

@@ -31,3 +31,11 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# 忽略所有 .class 文件
+*.class
+
+# 忽略常见的构建输出目录
+/target/
+/out/
+/build/

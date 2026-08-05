@@ -42,8 +42,6 @@ public class BuyRecordDto {
 
     private String reason;
 
-    private String coreRedBalls;
-
     private Integer totalBets;
 
     /**

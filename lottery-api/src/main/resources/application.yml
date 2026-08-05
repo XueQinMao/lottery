@@ -6,7 +6,7 @@ spring:
   application:
     name: lottery
   datasource:
-    url: jdbc:mariadb://10.22.36.120:8833/lottery?useSSL=false&serverTimezone=UTC
+    url: jdbc:mariadb://127.0.0.1:8833/lottery?useGssapi=false&useSSL=false&serverTimezone=UTC
     username: root
     password: 5F52uA8npe
     driver-class-name: org.mariadb.jdbc.Driver
@@ -20,18 +20,35 @@ spring:
       base-url: https://api.deepseek.com
       chat:
         options:
+          # 调优 / 推荐：思考模型deepseek-v4-pro  deepseek-chat
           model: deepseek-v4-pro
           temperature: 0.9
+          #max-tokens: 16384
 mybatis-plus:
   configuration:
     #log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
     map-underscore-to-camel-case: true
   mapper-locations: classpath*:mapper/**/*.xml
 lottery:
+  llm:
+    analysis:
+      # java：snapshot 的 indexValues 前后期差值趋势本地计算
+      # llm：压缩候选表后由大模型选值，再 applyGuard 硬校验
+      engine: java
+      model: deepseek-chat
+      temperature: 0.2
   model:
-    path: E:\home\python\
+    path: D:\home\python\
     csv:
       ml: ml_features.csv
       sequence: sequence_features.csv
       markov: markov_features.csv
       history: history.csv
+  cache:
+    analysis:
+      # 是否启用 L2 本地磁盘缓存
+      disk-enabled: true
+      # L2 磁盘缓存目录（存放 LLM 分析结果 JSON 文件）
+      disk-dir: D:/home/cache/llm
+      # L1 内存缓存最大容量
+      memory-size: 1

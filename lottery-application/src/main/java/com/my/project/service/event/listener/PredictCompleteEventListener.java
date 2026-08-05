@@ -44,8 +44,8 @@ public class PredictCompleteEventListener {
 
     @EventListener
     public void handleEvent(PredictCompleteEvent event) {
-        ModelPredictOutputBo predictOutput = JSONObject.parseObject(event.getPredictRecord(), ModelPredictOutputBo.class);
-        WeightConfigBo optimizedWeightConfig = smartSelectService.getWeightConfig();
+        var predictOutput = JSONObject.parseObject(event.getPredictRecord(), ModelPredictOutputBo.class);
+        var optimizedWeightConfig = smartSelectService.getWeightConfig();
         boolean isPersist = shouldPersist(predictOutput.getProbability(), optimizedWeightConfig);
         if (isPersist) {
             predictCacheService.addCache(predictOutput, event.getSsqCombinationBo(), event.getOpenDate());
@@ -75,7 +75,7 @@ public class PredictCompleteEventListener {
             return false;
         }
         if (config == null || config.getProbabilityMin() == null || config.getProbabilityMax() == null) {
-            return false;
+            return true;
         }
         double min = config.getProbabilityMin();
         double max = config.getProbabilityMax();

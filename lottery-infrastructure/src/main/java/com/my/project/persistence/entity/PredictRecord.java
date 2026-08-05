@@ -35,7 +35,6 @@ public class PredictRecord implements Serializable {
      */
     private LocalDate openDate;
 
-//    @TableField(typeHandler = SetStringTypeHandler.class, value = "red_balls")
     private String redBalls;
 
     /**

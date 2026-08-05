@@ -11,19 +11,29 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+import java.util.stream.Collectors;
+
 /**
  * LotteryAdjustServiceImpl
  *
- * <p>调用 DeepSeek：每组输出单式调整 + 组内复式，并额外输出一组最终可购买复式
- * （{@link LotteryAdjustRespBo#getFinalComplexTicket()}）
- * 与两组最终可购买单式（{@link LotteryAdjustRespBo#getFinalSingleTickets()}）。
+ * <p>调用 DeepSeek，支持两种模式（输出 Schema 相同）：
+ * <ul>
+ *     <li>调优：tickets 非空 — 逐组单式调整 + 最终推荐包（2 单式 + 1 复式）</li>
+ *     <li>推荐：tickets 为空 — 按特征报告生成 recommendCount 组单式 + 最终推荐包</li>
+ *     <li>userRequirement 可选：用户附加要求拼入 Prompt，与和值/跨度安全网求交后执行</li>
+ * </ul>
  *
  * @author 刘强
- * @version 2026/07/22 11:50
+ * @version 2026/08/17
  **/
 @Slf4j
 @Service
 public class LotteryAdjustServiceImpl implements ILotteryAdjustService {
+
+    private static final int DEFAULT_RECOMMEND_COUNT = 2;
+    private static final int MAX_RECOMMEND_COUNT = 10;
+    private static final int MAX_USER_REQUIREMENT_LENGTH = 800;
 
     private final ChatClient lotteryAdjustChatClient;
 
@@ -33,75 +43,146 @@ public class LotteryAdjustServiceImpl implements ILotteryAdjustService {
 
     @Override
     public LotteryAdjustRespBo adjust(LotteryAdjustReqBo reqBo) {
-        if (reqBo == null || reqBo.getTickets() == null || reqBo.getTickets().isEmpty()) {
-            throw new IllegalArgumentException("待调整的预测号码组不能为空");
+        if (reqBo == null) {
+            throw new IllegalArgumentException("调优入参不能为空");
         }
         if (reqBo.getAnalysisReportJson() == null || reqBo.getAnalysisReportJson().isBlank()) {
             throw new IllegalArgumentException("特征分析报告不能为空");
         }
-        log.info("开始调用 DeepSeek 调优（单组复式+最终复式+最终单式），候选组数: {}", reqBo.getTickets().size());
+        return CollectionUtils.isEmpty(reqBo.getTickets()) ? recommend(reqBo) : adjustExisting(reqBo);
+    }
+
+    /**
+     * 调优模式：对已有号码组逐一调整。
+     */
+    private LotteryAdjustRespBo adjustExisting(LotteryAdjustReqBo reqBo) {
+        log.info("开始调用 DeepSeek 调优（单组单式+最终推荐包），候选组数: {}，用户附加要求: {}",
+            reqBo.getTickets().size(), formatUserRequirement(reqBo.getUserRequirement()));
 
         String ticketsJson = JSON.toJSONString(reqBo.getTickets());
-
         LotteryAdjustRespBo result = lotteryAdjustChatClient.prompt()
-                .user(u -> u.text(LotteryAdjustPrompt.USER_PROMPT)
-                        .param("report", reqBo.getAnalysisReportJson())
-                        .param("tickets", ticketsJson)
-                        .param("format", FORMAT_HINT))
-                .call()
-                .entity(LotteryAdjustRespBo.class);
+            .user(u -> u.text(LotteryAdjustPrompt.USER_PROMPT)
+                .param("report", reqBo.getAnalysisReportJson())
+                .param("tickets", ticketsJson)
+                .param("lastRedBalls", formatBalls(reqBo.getLastDrawRedBalls()))
+                .param("lastBlueBall", reqBo.getLastDrawBlueBall() == null ? "" : String.valueOf(reqBo.getLastDrawBlueBall()))
+                .param("userRequirement", formatUserRequirement(reqBo.getUserRequirement()))
+                .param("format", FORMAT_HINT))
+            .call()
+            .entity(LotteryAdjustRespBo.class);
 
         validateResult(result, reqBo.getTickets().size());
-
-        log.info("DeepSeek 调优完成: groups={}, finalRed={}, finalBlue={}, totalBets={}, singleTickets={}",
-            CollectionUtils.size(result.getAdjustedTickets()),
-            result.getFinalComplexTicket().getRedBalls(),
-            result.getFinalComplexTicket().getBlueBalls(),
-            result.getFinalComplexTicket().getTotalBets(),
-            CollectionUtils.size(result.getFinalSingleTickets()));
         return result;
+    }
+
+    /**
+     * 推荐模式：tickets 为空时，按特征报告从零生成 N 组号码。
+     */
+    private LotteryAdjustRespBo recommend(LotteryAdjustReqBo reqBo) {
+        int count = resolveRecommendCount(reqBo.getCount());
+        log.info("开始调用 DeepSeek 推荐（无候选号码，按特征报告生成），组数: {}，用户附加要求: {}",
+            count, formatUserRequirement(reqBo.getUserRequirement()));
+
+        LotteryAdjustRespBo result = lotteryAdjustChatClient.prompt()
+            .user(u -> u.text(LotteryAdjustPrompt.RECOMMEND_PROMPT)
+                .param("report", reqBo.getAnalysisReportJson())
+                .param("count", String.valueOf(count))
+                .param("lastRedBalls", formatBalls(reqBo.getLastDrawRedBalls()))
+                .param("lastBlueBall", reqBo.getLastDrawBlueBall() == null ? "" : String.valueOf(reqBo.getLastDrawBlueBall()))
+                .param("userRequirement", formatUserRequirement(reqBo.getUserRequirement()))
+                .param("format", FORMAT_HINT))
+            .call()
+            .entity(LotteryAdjustRespBo.class);
+
+        validateResult(result, count);
+        return result;
+    }
+
+    /**
+     * 格式化上期红球列表为 prompt 可读字符串（升序、逗号分隔），为空时返回空串以触发「忽略上期约束」。
+     */
+    private static String formatBalls(List<Integer> balls) {
+        if (balls == null || balls.isEmpty()) {
+            return "";
+        }
+        return balls.stream().sorted().map(String::valueOf).collect(Collectors.joining(", "));
+    }
+
+    /**
+     * 格式化用户附加要求：空白视为「无」；截断过长文本；转义花括号以免破坏 Prompt 占位符。
+     */
+    private static String formatUserRequirement(String userRequirement) {
+        if (userRequirement == null || userRequirement.isBlank()) {
+            return "无";
+        }
+        String sanitized = userRequirement.replace("{", "｛").replace("}", "｝").trim();
+        if (sanitized.length() > MAX_USER_REQUIREMENT_LENGTH) {
+            sanitized = sanitized.substring(0, MAX_USER_REQUIREMENT_LENGTH);
+        }
+        return sanitized.isEmpty() ? "无" : sanitized;
+    }
+
+    private int resolveRecommendCount(Integer recommendCount) {
+        int count = recommendCount == null ? DEFAULT_RECOMMEND_COUNT : recommendCount;
+        if (count < 1) {
+            count = DEFAULT_RECOMMEND_COUNT;
+        }
+        return Math.min(count, MAX_RECOMMEND_COUNT);
     }
 
     private void validateResult(LotteryAdjustRespBo result, int ticketCount) {
         if (result == null) {
             throw new IllegalStateException("大模型返回为空");
         }
-        if (result.getFinalComplexTicket() == null
-                || CollectionUtils.isEmpty(result.getFinalComplexTicket().getRedBalls())
-                || CollectionUtils.isEmpty(result.getFinalComplexTicket().getBlueBalls())) {
-            throw new IllegalStateException("大模型未返回有效的 finalComplexTicket（最终复式）");
+        if (CollectionUtils.isEmpty(result.getAdjustedTickets())) {
+            throw new IllegalStateException("大模型未返回 adjustedTickets");
         }
-        if (CollectionUtils.isEmpty(result.getFinalSingleTickets())) {
-            throw new IllegalStateException("大模型未返回 finalSingleTickets（最终单式）");
-        }
-        if (result.getFinalSingleTickets().size() != 2) {
+        long missingSingle = result.getAdjustedTickets().stream()
+            .filter(t -> CollectionUtils.isEmpty(t.getAdjustedRedBalls())
+                || t.getAdjustedRedBalls().size() != 6
+                || t.getAdjustedBlueBall() == null)
+            .count();
+        if (missingSingle > 0) {
             throw new IllegalStateException(
-                "finalSingleTickets 必须恰好 2 组，实际: " + result.getFinalSingleTickets().size());
+                "有 " + missingSingle + " 组 adjustedTickets 未返回有效的 6 红 + 1 蓝");
         }
-        long missingSingle = result.getFinalSingleTickets().stream()
+        if (result.getAdjustedTickets().size() != ticketCount) {
+            log.warn("adjustedTickets 数量({})与期望组数({})不一致",
+                result.getAdjustedTickets().size(), ticketCount);
+        }
+
+        LotteryAdjustRespBo.FinalRecommendation finalRec = result.getFinalRecommendation();
+        if (finalRec == null) {
+            throw new IllegalStateException("大模型未返回 finalRecommendation（最终推荐包）");
+        }
+        if (CollectionUtils.isEmpty(finalRec.getSingleTickets())) {
+            throw new IllegalStateException("大模型未返回 finalRecommendation.singleTickets（最终单式）");
+        }
+        if (finalRec.getSingleTickets().size() != 2) {
+            throw new IllegalStateException(
+                "finalRecommendation.singleTickets 必须恰好 2 组，实际: "
+                    + finalRec.getSingleTickets().size());
+        }
+        long invalidFinalSingle = finalRec.getSingleTickets().stream()
             .filter(t -> CollectionUtils.isEmpty(t.getRedBalls())
                 || t.getRedBalls().size() != 6
                 || t.getBlueBall() == null)
             .count();
-        if (missingSingle > 0) {
+        if (invalidFinalSingle > 0) {
             throw new IllegalStateException(
-                "有 " + missingSingle + " 组 finalSingleTickets 未返回有效的 6 红 + 1 蓝");
+                "有 " + invalidFinalSingle + " 组 finalRecommendation.singleTickets 未返回有效的 6 红 + 1 蓝");
         }
-        if (CollectionUtils.isEmpty(result.getAdjustedTickets())) {
-            throw new IllegalStateException("大模型未返回 adjustedTickets（含单组复式）");
+        if (finalRec.getComplexTicket() == null
+            || CollectionUtils.isEmpty(finalRec.getComplexTicket().getRedBalls())
+            || CollectionUtils.isEmpty(finalRec.getComplexTicket().getBlueBalls())) {
+            throw new IllegalStateException("大模型未返回有效的 finalRecommendation.complexTicket（最终复式）");
         }
-        long missingComplex = result.getAdjustedTickets().stream()
-            .filter(t -> t.getComplexTicket() == null
-                || CollectionUtils.isEmpty(t.getComplexTicket().getRedBalls())
-                || CollectionUtils.isEmpty(t.getComplexTicket().getBlueBalls()))
-            .count();
-        if (missingComplex > 0) {
+        int redSize = finalRec.getComplexTicket().getRedBalls().size();
+        int blueSize = finalRec.getComplexTicket().getBlueBalls().size();
+        if (redSize < 7 || redSize > 10 || blueSize < 2 || blueSize > 5) {
             throw new IllegalStateException(
-                "有 " + missingComplex + " 组未返回有效 complexTicket（单组复式）");
-        }
-        if (result.getAdjustedTickets().size() != ticketCount) {
-            log.warn("adjustedTickets 数量({})与入参组数({})不一致",
-                result.getAdjustedTickets().size(), ticketCount);
+                "finalRecommendation.complexTicket 红球须 7-10、蓝球须 2-5，实际红="
+                    + redSize + " 蓝=" + blueSize);
         }
     }
 
@@ -114,41 +195,36 @@ public class LotteryAdjustServiceImpl implements ILotteryAdjustService {
                   "originalBlueBall": int,
                   "redReplacements": [ { "from": int, "to": int, "basis": "依据" } ],
                   "blueReplacement": { "from": int, "to": int, "basis": "依据" },
-                  "adjustedRedBalls": [int],
+                  "adjustedRedBalls": [int, int, int, int, int, int],
                   "adjustedBlueBall": int,
-                  "reason": "本组调整说明",
-                  "complexTicket": {
-                    "name": "本组复式名称",
-                    "redBalls": [int],
-                    "blueBalls": [int],
-                    "totalBets": int,
-                    "basis": "本组复式依据"
+                  "reason": "本组调整说明"
+                }
+              ],
+              "finalRecommendation": {
+                "singleTickets": [
+                  {
+                    "name": "最终单式名称(如热温延续单式)",
+                    "redBalls": [int, int, int, int, int, int],
+                    "blueBall": int,
+                    "totalBets": 1,
+                    "basis": "本组单式针对的形态假设与冷热/分区/连号结构依据"
+                  },
+                  {
+                    "name": "第二组单式名称(如温冷回冷单式)",
+                    "redBalls": [int, int, int, int, int, int],
+                    "blueBall": int,
+                    "totalBets": 1,
+                    "basis": "本组单式针对的形态假设与冷热/分区/连号结构依据"
                   }
+                ],
+                "complexTicket": {
+                  "name": "最终复式名称",
+                  "redBalls": [int],
+                  "blueBalls": [int],
+                  "totalBets": int,
+                  "basis": "最终复式选号依据"
                 }
-              ],
-              "finalComplexTicket": {
-                "name": "最终复式名称",
-                "redBalls": [int],
-                "blueBalls": [int],
-                "totalBets": int,
-                "basis": "最终复式选号依据"
               },
-              "finalSingleTickets": [
-                {
-                  "name": "最终单式名称(如热温延续单式/温冷回冷单式)",
-                  "redBalls": [int, int, int, int, int, int],
-                  "blueBall": int,
-                  "totalBets": 1,
-                  "basis": "本组单式针对的形态假设与冷热/分区/连号结构依据"
-                },
-                {
-                  "name": "第二组单式名称",
-                  "redBalls": [int, int, int, int, int, int],
-                  "blueBall": int,
-                  "totalBets": 1,
-                  "basis": "本组单式针对的形态假设与冷热/分区/连号结构依据"
-                }
-              ],
               "conclusion": "综合说明"
             }
             """;
