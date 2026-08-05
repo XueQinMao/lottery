@@ -1,71 +1,67 @@
 package com.my.project.service.support;
 
 import cn.hutool.core.collection.CollectionUtil;
-import com.baomidou.mybatisplus.extension.conditions.query.LambdaQueryChainWrapper;
-import com.my.project.persistence.repository.IPredictRecordRepository;
-import com.my.project.persistence.entity.PredictRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.LocalDate;
 import java.util.List;
 import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
- * BatchQueryUtils
- *
- * @author 刘强
- * @version 2025/11/20 20:16
+ * 按 ID 分段批处理。查询与加载都由调用方以函数传入，不绑定具体 Repository。
  **/
-public class BatchQueryUtils {
+public final class BatchQueryUtils {
 
     private static final Logger logging = LoggerFactory.getLogger(BatchQueryUtils.class);
-    private final IPredictRecordRepository predictRecordRepository;
 
-    public BatchQueryUtils(IPredictRecordRepository predictRecordRepository) {
-        this.predictRecordRepository = predictRecordRepository;
+    public static final int DEFAULT_ENTITY_BATCH = 10_000;
+    public static final int DEFAULT_ID_BATCH = 100;
+
+    private BatchQueryUtils() {
     }
 
     /**
-     * 第一步：查询总条数
-     * 2、分段的去查询
-     * @param openDate
+     * 先拉全量 ID，再按批加载实体后交给 consumer。
+     *
+     * @param idLoader    查询全部待处理 ID（建议按 ID 升序）
+     * @param batchLoader 按一批 ID 加载实体，例如 {@code ids -> repo.lambdaQuery().in(Entity::getId, ids).list()}
+     * @param consumer    处理本批实体
      */
-    public void process(LocalDate openDate, Consumer<List<PredictRecord>> consumer) {
-        List<Long> allIds =
-            predictRecordRepository.lambdaQuery().eq(PredictRecord::getOpenDate, openDate).select(PredictRecord::getId).orderByAsc(PredictRecord::getId)
-                .list().stream().map(PredictRecord::getId).toList();
-        logging.info("查询总条数 {}", allIds.size());
-
-        CollectionUtil.split(allIds, 10000).parallelStream().forEach(ids ->{
-            List<PredictRecord> list = predictRecordRepository.lambdaQuery().ge(PredictRecord::getId, ids.getFirst()).lt(PredictRecord::getId, ids.getLast()).list();
-            consumer.accept(list);
-        });
+    public static <ID, T> void process(Supplier<List<ID>> idLoader, Function<List<ID>, List<T>> batchLoader,
+            Consumer<List<T>> consumer) {
+        process(idLoader, batchLoader, consumer, DEFAULT_ENTITY_BATCH);
     }
 
-
-    public void process(Consumer<LambdaQueryChainWrapper<PredictRecord>> queryConditionBuilder, Consumer<List<PredictRecord>> consumer) {
-        LambdaQueryChainWrapper<PredictRecord> baseQuery = predictRecordRepository.lambdaQuery();
-        if(null != queryConditionBuilder){
-            queryConditionBuilder.accept(baseQuery);
+    public static <ID, T> void process(Supplier<List<ID>> idLoader, Function<List<ID>, List<T>> batchLoader,
+            Consumer<List<T>> consumer, int batchSize) {
+        List<ID> allIds = idLoader.get();
+        logging.info("查询总条数 {}", allIds.size());
+        if (CollectionUtil.isEmpty(allIds)) {
+            return;
         }
-        List<Long> allIds = baseQuery// 使用合并后的查询条件
-            .select(PredictRecord::getId).orderByAsc(PredictRecord::getId).list().stream().map(PredictRecord::getId)
-            .toList();
-        logging.info("查询总条数 {}", allIds.size());
-
-        CollectionUtil.split(allIds, 10000).parallelStream().forEach(ids ->{
-            List<PredictRecord> list = predictRecordRepository.lambdaQuery().ge(PredictRecord::getId, ids.getFirst()).lt(PredictRecord::getId, ids.getLast()).list();
-            consumer.accept(list);
+        CollectionUtil.split(allIds, batchSize).parallelStream().forEach(ids -> {
+            List<T> list = batchLoader.apply(ids);
+            if (CollectionUtil.isNotEmpty(list)) {
+                consumer.accept(list);
+            }
         });
     }
 
-    public void processIds(LocalDate openDate, Consumer<List<Long>> consumer) {
-        List<Long> allIds =
-            predictRecordRepository.lambdaQuery().eq(PredictRecord::getOpenDate, openDate).select(PredictRecord::getId)
-                .list().stream().map(PredictRecord::getId).toList();
-        logging.info("查询总条数 {}", allIds.size());
+    /**
+     * 只按 ID 分段处理（删除、按 ID 再查等）。
+     */
+    public static <ID> void processIds(Supplier<List<ID>> idLoader, Consumer<List<ID>> consumer) {
+        processIds(idLoader, consumer, DEFAULT_ID_BATCH);
+    }
 
-        CollectionUtil.split(allIds, 100).parallelStream().forEach(consumer);
+    public static <ID> void processIds(Supplier<List<ID>> idLoader, Consumer<List<ID>> consumer, int batchSize) {
+        List<ID> allIds = idLoader.get();
+        logging.info("查询总条数 {}", allIds.size());
+        if (CollectionUtil.isEmpty(allIds)) {
+            return;
+        }
+        CollectionUtil.split(allIds, batchSize).parallelStream().forEach(consumer);
     }
 }

@@ -2,13 +2,17 @@ package com.my.project.api.controller;
 
 import com.my.project.api.pojo.req.LLmAnalysisReq;
 import com.my.project.api.pojo.resp.Result;
-import com.my.project.llm.bo.LotteryAdjustRespBo;
+import com.my.project.llm.bo.LotteryAdjustViewBo;
 import com.my.project.llm.bo.LotteryAnalysisRespBo;
-import com.my.project.service.llm.ILotteryFeatureAnalysisService;
-import com.my.project.service.llm.pojo.dto.LLmAdjustDto;
+import com.my.project.service.feature.ILotteryFeatureAnalysisService;
+import com.my.project.service.feature.pojo.dto.LLmAdjustDto;
+import com.my.project.service.feature.pojo.vo.AdjustHistoryFileVo;
+import com.my.project.service.record.pojo.vo.PredictFileRecordVo;
 import org.apache.commons.collections4.CollectionUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 /**
  * LotteryLlmController
@@ -43,27 +47,91 @@ public class LotteryLlmController {
     }
 
     /**
-     * 便捷入口：直接传红球列表（每注 6 个红球）进行分析。
+     * 调优 / 推荐入口。
+     * <ul>
+     *     <li>drawRecords 非空 → 调优模式</li>
+     *     <li>drawRecords 为空或不传 → 推荐模式，仅按 count（默认 2，上限 10）生成号码组</li>
+     * </ul>
      */
     @PostMapping("/adjust")
-    public Result<LotteryAdjustRespBo> analyzeByRedBalls(@RequestBody LLmAnalysisReq req) {
+    public Result<LotteryAdjustViewBo> analyzeByRedBalls(@RequestBody(required = false) LLmAnalysisReq req) {
         try {
+            if (req == null) {
+                req = new LLmAnalysisReq();
+            }
             var list = CollectionUtils.emptyIfNull(req.getDrawRecords()).stream().map(
                 d -> LLmAdjustDto.DrawRecord.builder().redballs(d.getRedballs()).blueball(d.getBlueball())
                     .build()).toList();
 
             var lLmAdjustDto =
-                LLmAdjustDto.builder().drawRecords(list).build();
+                LLmAdjustDto.builder().drawRecords(list)
+                    .lastDrawRedBalls(req.getLastDrawRedBalls())
+                    .lastDrawBlueBall(req.getLastDrawBlueBall())
+                    .count(req.getCount()).build();
             return Result.success(lotteryFeatureAnalysisService.adjust(lLmAdjustDto));
         } catch (Exception e) {
             return Result.error(e.getMessage());
         }
     }
 
+    /**
+     * 最近推荐文件名列表（按修改时间倒序）。
+     */
+    @GetMapping("/adjust/history")
+    public Result<List<AdjustHistoryFileVo>> listAdjustHistory(
+            @RequestParam(required = false, defaultValue = "20") int limit) {
+        try {
+            return Result.success(lotteryFeatureAnalysisService.listAdjustHistory(limit));
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    /**
+     * 按文件名读取推荐详情。
+     */
+    @GetMapping("/adjust/history/{fileName:.+}")
+    public Result<LotteryAdjustViewBo> loadAdjustHistory(@PathVariable String fileName) {
+        try {
+            return Result.success(lotteryFeatureAnalysisService.loadAdjustHistory(fileName));
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
     @GetMapping("/adjust/{count}/{isTopN}")
-    public Result<LotteryAdjustRespBo> adjustFromCacheTop(@PathVariable Integer count, @PathVariable boolean isTopN) {
+    public Result<LotteryAdjustViewBo> adjustFromCacheTop(@PathVariable Integer count, @PathVariable boolean isTopN) {
         try {
             return Result.success(lotteryFeatureAnalysisService.adjust(count, isTopN));
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    /**
+     * 预测/特征结果文件历史列表（按创建时间倒序）。
+     *
+     * @param type 类型：RECOMMEND=号码推荐，ANALYSIS=特征预测；为空查全部
+     * @param limit 最多返回条数（默认 20，上限 100）
+     */
+    @GetMapping("/file-history")
+    public Result<List<PredictFileRecordVo>> listFileHistory(
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false, defaultValue = "20") int limit) {
+        try {
+            return Result.success(lotteryFeatureAnalysisService.listFileHistory(type, limit));
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    /**
+     * 按文件名读取特征预测结果详情。
+     */
+    @GetMapping("/analyze/history/{fileName:.+}")
+    public Result<LotteryAnalysisRespBo> loadAnalysisHistory(@PathVariable String fileName) {
+        try {
+            return Result.success(lotteryFeatureAnalysisService.loadAnalysisHistory(fileName));
         } catch (Exception e) {
             return Result.error(e.getMessage());
         }

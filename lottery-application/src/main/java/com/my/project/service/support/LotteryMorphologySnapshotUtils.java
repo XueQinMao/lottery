@@ -1,0 +1,93 @@
+package com.my.project.service.support;
+
+import com.alibaba.fastjson2.JSON;
+import com.my.project.service.history.pojo.vo.PatternTrendVo;
+import com.my.project.service.history.pojo.vo.PatternTrendVo.RatioOption;
+import com.my.project.service.history.pojo.vo.PatternTrendVo.Stats;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+/**
+ * LotteryMorphologySnapshotUtils
+ *
+ * <p>把 {@link PatternTrendVo}（与形态指数页同源）压成 LLM 快照。
+ *
+ * @author 刘强
+ * @version 2026/08/18
+ **/
+public final class LotteryMorphologySnapshotUtils {
+
+    private LotteryMorphologySnapshotUtils() {
+    }
+
+    /**
+     * 形态指数页摘要（仅 stats + ratioOptions 标量）。
+     */
+    public static String fromPatternTrend(PatternTrendVo vo) {
+        return JSON.toJSONString(baseRoot(vo, false));
+    }
+
+    /**
+     * LLM 推算用完整快照：共享 periods/actuals，每个分桶带遗漏序列、指数序列、命中间隔。
+     */
+    public static String fromPatternTrendForLlm(PatternTrendVo vo) {
+        return JSON.toJSONString(baseRoot(vo, true));
+    }
+
+    private static Map<String, Object> baseRoot(PatternTrendVo vo, boolean withSeries) {
+        if (vo == null || vo.getStats() == null) {
+            throw new IllegalArgumentException("形态指数结果不能为空");
+        }
+        Stats stats = vo.getStats();
+        Map<String, Object> root = new LinkedHashMap<>();
+        root.put("feature", vo.getFeature());
+        root.put("label", vo.getFeatureLabel());
+        root.put("sampleSize", stats.getTotalPeriods());
+        root.put("lastPeriod", vo.getLatestPeriod());
+        root.put("lastWinning", vo.getLatestWinning());
+        root.put("lastValue", vo.getLatestRatio());
+        root.put("indexFormula", "indexValues 累计：命中 +(1-p)，未命中 -p；标量 index = hitCount - n*p");
+        if (withSeries) {
+            root.put("periods", vo.getPeriods());
+            root.put("actuals", vo.getActuals());
+        }
+
+        Map<String, Object> lastStats = new LinkedHashMap<>();
+        lastStats.put("maxOmission", stats.getMaxOmission());
+        lastStats.put("avgOmission", stats.getAvgOmission());
+        lastStats.put("currentOmission", stats.getCurrentOmission());
+        lastStats.put("hitCount", stats.getHitCount());
+        lastStats.put("totalPeriods", stats.getTotalPeriods());
+        lastStats.put("theoreticalProb", stats.getTheoreticalProb());
+        lastStats.put("theoreticalHits", stats.getTheoreticalHits());
+        lastStats.put("index", stats.getIndex());
+        root.put("stats", lastStats);
+
+        List<Map<String, Object>> options =
+            Optional.ofNullable(vo.getRatioOptions()).orElse(List.<RatioOption>of()).stream()
+                .map(opt -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("ratio", opt.getRatio());
+                    row.put("hitCount", opt.getHitCount());
+                    row.put("theoreticalProb", opt.getTheoreticalProb());
+                    row.put("theoreticalHits", opt.getTheoreticalHits());
+                    row.put("index", opt.getIndex());
+                    row.put("currentOmission", opt.getCurrentOmission());
+                    row.put("avgOmission", opt.getAvgOmission());
+                    row.put("maxOmission", opt.getMaxOmission());
+                    row.put("isLast", opt.getRatio() != null && opt.getRatio().equals(vo.getLatestRatio()));
+                    if (withSeries) {
+                        row.put("omissions", opt.getOmissions());
+                        row.put("indexValues", opt.getIndexValues());
+                        row.put("hitIntervals", opt.getHitIntervals());
+                    }
+                    return row;
+                })
+                .toList();
+        root.put("ratioOptions", options);
+        return root;
+    }
+}

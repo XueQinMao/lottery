@@ -49,7 +49,9 @@ public class PredictRecordServiceImpl implements IPredictRecordService {
     @Override
     @Transactional
     public void deleteByOpenDate(LocalDate openDate) {
-        new BatchQueryUtils(predictRecordRepository).processIds(openDate,
+        BatchQueryUtils.processIds(
+            () -> predictRecordRepository.lambdaQuery().eq(PredictRecord::getOpenDate, openDate)
+                .select(PredictRecord::getId).list().stream().map(PredictRecord::getId).toList(),
             ids -> predictRecordRepository.getBaseMapper().deleteByIds(ids));
         //回收mariaDB空间
         predictRecordRepository.optimizeTable();

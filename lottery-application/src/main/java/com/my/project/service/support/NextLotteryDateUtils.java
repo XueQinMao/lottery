@@ -2,10 +2,11 @@ package com.my.project.service.support;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * NextLotteryDateUtils
@@ -17,30 +18,24 @@ public class NextLotteryDateUtils {
 
     // 双色球开奖日：周二、周四、周日
     private static final List<DayOfWeek> DRAW_DAYS =
-        Arrays.asList(DayOfWeek.TUESDAY, DayOfWeek.THURSDAY, DayOfWeek.SUNDAY);
+        List.of(DayOfWeek.TUESDAY, DayOfWeek.THURSDAY, DayOfWeek.SUNDAY);
 
     public static LocalDate nextDrawDate() {
         return nextDrawDate(1);
     }
 
     public static LocalDate prevDrawDate() {
-        LocalDate date = LocalDate.now().plusDays(-1);
-        while (true) {
-            if (DRAW_DAYS.contains(date.getDayOfWeek())) {
-                return date;
-            }
-            date = date.plusDays(-1);
-        }
+        return Stream.iterate(LocalDate.now().plusDays(-1), d -> d.minusDays(1))
+            .filter(d -> DRAW_DAYS.contains(d.getDayOfWeek()))
+            .findFirst()
+            .orElseThrow();
     }
 
     public static LocalDate prevDrawDate(int daysToAdd) {
-        LocalDate date = LocalDate.now().plusDays(daysToAdd);
-        while (true) {
-            if (DRAW_DAYS.contains(date.getDayOfWeek())) {
-                return date;
-            }
-            date = date.plusDays(daysToAdd);
-        }
+        return Stream.iterate(LocalDate.now().plusDays(daysToAdd), d -> d.plusDays(daysToAdd))
+            .filter(d -> DRAW_DAYS.contains(d.getDayOfWeek()))
+            .findFirst()
+            .orElseThrow();
     }
 
 
@@ -50,13 +45,10 @@ public class NextLotteryDateUtils {
      * @return
      */
     private static LocalDate nextDrawDate(int daysToAdd) {
-        LocalDate date = LocalDate.now();
-        while (true) {
-            if (DRAW_DAYS.contains(date.getDayOfWeek())) {
-                return date;
-            }
-            date = date.plusDays(daysToAdd);
-        }
+        return Stream.iterate(LocalDate.now(), d -> d.plusDays(daysToAdd))
+            .filter(d -> DRAW_DAYS.contains(d.getDayOfWeek()))
+            .findFirst()
+            .orElseThrow();
     }
 
 
@@ -66,15 +58,9 @@ public class NextLotteryDateUtils {
      * @return 包含前10次开奖日期的列表
      */
     public static Set<LocalDate> previousDrawDates(int number) {
-        Set<LocalDate> drawDates = new HashSet<>();
-        LocalDate date = LocalDate.now().minusDays(1); // 从昨天开始往前查找
-
-        while (drawDates.size() < number) {
-            if (DRAW_DAYS.contains(date.getDayOfWeek())) {
-                drawDates.add(date);
-            }
-            date = date.minusDays(1);
-        }
-        return drawDates;
+        return Stream.iterate(LocalDate.now().minusDays(1), d -> d.minusDays(1))
+            .filter(d -> DRAW_DAYS.contains(d.getDayOfWeek()))
+            .limit(number)
+            .collect(Collectors.toCollection(HashSet::new));
     }
 }

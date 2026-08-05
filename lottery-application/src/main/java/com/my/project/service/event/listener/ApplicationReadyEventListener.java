@@ -28,7 +28,7 @@ import java.util.concurrent.CompletableFuture;
 @Component
 @AllArgsConstructor
 @Slf4j
-public class ApplicationReadyEventListener {
+public  class ApplicationReadyEventListener {
 
     private final StartupChainAssembler chainCombination;
 
@@ -44,7 +44,7 @@ public class ApplicationReadyEventListener {
         for (int i = 0; i < list.size() - 1; i++) {
             list.get(i).setNext(list.get(i + 1));
         }
-        list.getFirst().handle(new StartupContextBo<>());
+//        list.getFirst().handle(new StartupContextBo<>());
     }
 
     /**

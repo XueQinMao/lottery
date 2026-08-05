@@ -5,8 +5,8 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.my.project.persistence.entity.PredictRecord;
 import com.my.project.python.bo.ModelPredictOutputBo;
-import com.my.project.service.support.KryoSerializerUtils;
-import com.my.project.service.support.Lz4Utils;
+import com.my.project.service.support.compress.KryoSerializerUtils;
+import com.my.project.service.support.compress.Lz4Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

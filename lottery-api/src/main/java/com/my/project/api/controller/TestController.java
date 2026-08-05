@@ -44,7 +44,7 @@ public class TestController {
 
     @GetMapping("/archiveHits")
     public String archiveHits() {
-        List<HistoryRecord> latestRecords1 = historyRecordService.getLatestRecords(20);
+        List<HistoryRecord> latestRecords1 = historyRecordService.getLatestRecords(5);
 
         latestRecords1.parallelStream().sorted((h1, h2) -> h1.getOpenDate().compareTo(h2.getOpenDate()))
             .forEachOrdered(historyRecord -> predictHitRecordService.archiveHits(historyRecord.getOpenDate()));

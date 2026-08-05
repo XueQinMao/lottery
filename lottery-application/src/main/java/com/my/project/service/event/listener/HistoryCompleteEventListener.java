@@ -1,13 +1,11 @@
 package com.my.project.service.event.listener;
 
 import com.my.project.persistence.entity.HistoryRecord;
+import com.my.project.service.event.HistoryCompleteEvent;
 import com.my.project.service.history.IHistoryRecordService;
 import com.my.project.service.predict.IPredictHitRecordService;
-import com.my.project.service.predict.IPredictRecordService;
-import com.my.project.service.event.HistoryCompleteEvent;
+import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
@@ -21,17 +19,14 @@ import java.util.List;
  **/
 @Component
 @Slf4j
+@AllArgsConstructor
 public class HistoryCompleteEventListener {
 
     private final IHistoryRecordService historyRecordService;
 
     private final IPredictHitRecordService predictHitRecordService;
+    
 
-    public HistoryCompleteEventListener(IHistoryRecordService historyRecordService,
-        IPredictHitRecordService predictHitRecordService) {
-        this.historyRecordService = historyRecordService;
-        this.predictHitRecordService = predictHitRecordService;
-    }
 
     @EventListener
     public void handleEvent(HistoryCompleteEvent event) {

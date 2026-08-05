@@ -14,19 +14,29 @@ import com.my.project.service.history.IHistoryRecordService;
 import com.my.project.service.history.pojo.dto.HistoryRecordDto;
 import com.my.project.service.history.pojo.client.SsqWebsiteClientDto;
 import com.my.project.service.history.pojo.client.WebsiteDrawItemDto;
+import com.my.project.service.history.pojo.vo.FeatureStatsVo;
+import com.my.project.service.history.pojo.vo.PatternTrendVo;
+import com.my.project.service.history.pojo.vo.TrendAnalysisVo;
+import com.my.project.service.support.LotteryFeatureTrendUtils;
+import com.my.project.service.support.LotteryFeatureTrendUtils.FeatureKind;
+import com.my.project.service.support.LotteryPatternTrendUtils;
+import com.my.project.service.support.LotteryPatternTrendUtils.PatternTrendResult;
+import com.my.project.service.support.LotteryPatternTrendUtils.PatternTrendStats;
+import com.my.project.service.support.LotteryTrendUtils;
+import com.my.project.service.support.LotteryTrendUtils.TrendAnalysisResult;
+import com.my.project.service.support.LotteryTrendUtils.TrendStats;
+import com.my.project.service.support.OmissionUtils;
 import org.apache.commons.lang3.math.NumberUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.Collections;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.regex.Pattern;
@@ -48,6 +58,9 @@ public class HistoryRecordServiceImpl implements IHistoryRecordService {
 
     private static final String URL_FORMAT =
         "https://www.cwl.gov.cn/cwl_admin/front/cwlkj/search/kjxx/findDrawNotice?name=%s&pageNo=%d&pageSize=10&systemType=PC";
+
+    /** 红球质数（1 视为合数） */
+    private static final Set<Integer> PRIMES = Set.of(2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31);
 
     private final IHistoryRecordRepository historyRecordRepository;
 
@@ -127,5 +140,112 @@ public class HistoryRecordServiceImpl implements IHistoryRecordService {
     public List<HistoryRecord> getLatestRecords(int count) {
         return historyRecordRepository.lambdaQuery().orderByDesc(HistoryRecord::getOpenDate).last("limit " + count)
             .list();
+    }
+
+    @Override
+    public List<HistoryRecord> getRecordsEndingAt(String endPeriod, int count) {
+        int size = Math.max(count, 1);
+        if (!StringUtils.hasText(endPeriod)) {
+            return getLatestRecords(size);
+        }
+        String period = endPeriod.trim();
+        HistoryRecord anchor = historyRecordRepository.lambdaQuery().eq(HistoryRecord::getPeriod, period).one();
+        if (anchor == null || anchor.getOpenDate() == null) {
+            throw new IllegalArgumentException("期号不存在: " + period);
+        }
+        return historyRecordRepository.lambdaQuery().le(HistoryRecord::getOpenDate, anchor.getOpenDate())
+            .orderByDesc(HistoryRecord::getOpenDate).last("limit " + size).list();
+    }
+
+    @Override
+    public TrendAnalysisVo analyzeTrend(String ballType, int ball, int sampleSize, String endPeriod) {
+        String type = StringUtils.hasText(ballType) ? ballType.trim().toLowerCase() : "red";
+        if (!"red".equals(type) && !"blue".equals(type)) {
+            throw new IllegalArgumentException("ballType 仅支持 red / blue");
+        }
+        int maxBall = "red".equals(type) ? 33 : 16;
+        if (ball < 1 || ball > maxBall) {
+            throw new IllegalArgumentException("号码超出范围: " + ball + "（" + type + " 应为 1-" + maxBall + "）");
+        }
+        int size = Math.max(sampleSize, 1);
+        List<HistoryRecord> latest = getRecordsEndingAt(endPeriod, size);
+        Assert.notEmpty(latest);
+        return OmissionUtils.omissionBallAnalyzer(latest, ballType, ball);
+    }
+
+    @Override
+    public FeatureStatsVo analyzeFeatureStats(int sampleSize, String endPeriod) {
+        int size = Math.max(sampleSize, 1);
+        List<HistoryRecord> latest = getRecordsEndingAt(endPeriod, size);
+        if (CollectionUtil.isEmpty(latest)) {
+            throw new IllegalStateException("无可用的历史开奖记录");
+        }
+        List<HistoryRecord> chronological = new ArrayList<>(latest);
+        Collections.reverse(chronological);
+
+        List<String> periods = new ArrayList<>(chronological.size());
+        List<Integer> sums = new ArrayList<>(chronological.size());
+        List<Integer> spans = new ArrayList<>(chronological.size());
+        List<Integer> primeCounts = new ArrayList<>(chronological.size());
+        List<String> primeRatios = new ArrayList<>(chronological.size());
+        List<Integer> redOddCounts = new ArrayList<>(chronological.size());
+        List<String> redOddEvenRatios = new ArrayList<>(chronological.size());
+        List<Integer> blueOddFlags = new ArrayList<>(chronological.size());
+        List<String> blueOddEvenLabels = new ArrayList<>(chronological.size());
+
+        for (HistoryRecord r : chronological) {
+            List<Integer> reds =
+                Arrays.asList(r.getNum1(), r.getNum2(), r.getNum3(), r.getNum4(), r.getNum5(), r.getNum6());
+            int sum = reds.stream().mapToInt(Integer::intValue).sum();
+            int span = Collections.max(reds) - Collections.min(reds);
+            int primeCount = (int)reds.stream().filter(PRIMES::contains).count();
+            int oddCount = (int)reds.stream().filter(n -> n % 2 == 1).count();
+            boolean blueOdd = r.getSpecial() != null && r.getSpecial() % 2 == 1;
+
+            periods.add(r.getPeriod());
+            sums.add(sum);
+            spans.add(span);
+            primeCounts.add(primeCount);
+            primeRatios.add(primeCount + ":" + (6 - primeCount));
+            redOddCounts.add(oddCount);
+            redOddEvenRatios.add(oddCount + ":" + (6 - oddCount));
+            blueOddFlags.add(blueOdd ? 1 : 0);
+            blueOddEvenLabels.add(blueOdd ? "奇" : "偶");
+        }
+
+        List<Integer> sumDeltas = new ArrayList<>(sums.size());
+        for (int i = 0; i < sums.size(); i++) {
+            if (i == 0) {
+                sumDeltas.add(null);
+            } else {
+                sumDeltas.add(sums.get(i) - sums.get(i - 1));
+            }
+        }
+
+        return FeatureStatsVo.builder().periods(periods).sumValues(sums).sumAvg(avg(sums))
+            .sumDeltaValues(sumDeltas).sumDeltaAvg(avg(sumDeltas)).spanValues(spans)
+            .spanAvg(avg(spans)).primeCounts(primeCounts).primeRatios(primeRatios).primeAvg(avg(primeCounts))
+            .redOddCounts(redOddCounts).redOddEvenRatios(redOddEvenRatios).redOddAvg(avg(redOddCounts))
+            .blueOddFlags(blueOddFlags).blueOddEvenLabels(blueOddEvenLabels).blueOddAvg(avg(blueOddFlags)).build();
+    }
+
+    @Override
+    public PatternTrendVo analyzePatternTrend(String feature, String ratio, int sampleSize, String endPeriod) {
+        int size = Math.max(sampleSize, 1);
+        List<HistoryRecord> latest = getRecordsEndingAt(endPeriod, size);
+        if (CollectionUtil.isEmpty(latest)) {
+            throw new IllegalStateException("无可用的历史开奖记录");
+        }
+        return analyzePatternTrend(feature, ratio, latest);
+    }
+
+    @Override
+    public PatternTrendVo analyzePatternTrend(String feature, String ratio, List<HistoryRecord> latestNewestFirst) {
+        return OmissionUtils.omissionFeatureTrendAnalyzer(feature, ratio, latestNewestFirst);
+    }
+
+    private static double avg(List<Integer> values) {
+        double mean = values.stream().filter(Objects::nonNull).mapToInt(Integer::intValue).average().orElse(0);
+        return Math.round(mean * 100.0) / 100.0;
     }
 }
