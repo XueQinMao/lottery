@@ -141,7 +141,7 @@ public class PredictHitRecordServiceImpl implements IPredictHitRecordService {
             List<Integer> resultRedBalls =
                 Arrays.stream(record.getRedBalls().split(",")).map(Integer::parseInt).toList();
             PrizeLevelEnum prizeLevel =
-                SsqPrizeCheckerUtils.checkPrize(integers, special, resultRedBalls, record.getBlueBall());
+                SsqPrizeCheckerUtils.checkPrize(integers, special, resultRedBalls, List.of(record.getBlueBall()));
             if (!PrizeLevelEnum.getHitPrizeLevels().contains(prizeLevel)) {
                 return null;
             }

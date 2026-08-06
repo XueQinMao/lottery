@@ -155,7 +155,7 @@ public class LotteryAnalysisMultiLevelCache {
     // ==================== 内部方法 ====================
 
     private Path filePath(String key) {
-        String name = DigestUtil.md5Hex(key).substring(0, 16) + ".json";
+        String name = key+ ".json";
         return diskDir.resolve(name);
     }
 

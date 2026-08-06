@@ -26,9 +26,14 @@ import java.util.stream.IntStream;
  *     <li>omission：遗漏期数（长期未开出）</li>
  *     <li>zone：三区失衡（某区整体偏冷）</li>
  *     <li>tail：尾数过密（某尾数显著高于均值）</li>
+ *     <li>rebound：冷号回补保护（仅红球，极值遗漏即将解冻，给负分对冲，避免极冷号被误杀）</li>
  * </ol>
- * 每个号码在每个维度得到一个 [0,1] 的得分，按 {@link KillNumberConfig#getWeights()} 加权
+ * 每个号码在每个维度得到一个 [0,1] 的得分（rebound 为负分），按 {@link KillNumberConfig#getWeights()} 加权
  * 融合为综合得分，再按硬杀阈值筛选为硬杀清单（LLM 须遵守）。
+ *
+ * <p>极值遗漏白名单兜底（仅红球）：遗漏期数占样本比例 ≥
+ * {@link KillNumberConfig#getExtremeOmissionWhitelistRatio()} 的号码，
+ * 即使综合得分达标也不进入硬杀清单，与 rebound 维度形成双保险。
  *
  * <p>所有阈值按 30 期样本校准，仅产出硬杀清单。所有计算在 Java 侧完成，
  * 不依赖 LLM 的算术能力，保证结果可解释、可回测、可调参。
@@ -56,25 +61,28 @@ public class KillNumberServiceImpl implements IKillNumberService {
             return emptyResult();
         }
 
-        Map<Integer, Double> redScores = calculateRedScores(records);
-        Map<Integer, Double> blueScores = calculateBlueScores(records);
+        Map<Integer, Integer> redOmission = calcRedOmission(records);
+        Map<Integer, Integer> blueOmission = calcBlueOmission(records);
+        Map<Integer, Double> redScores = calculateRedScores(records, redOmission);
+        Map<Integer, Double> blueScores = calculateBlueScores(records, blueOmission);
 
-        List<KillItemBo> hardKillRed = pickTop(redScores, killNumberConfig.getMaxHardKillRed(),
-            killNumberConfig.getHardThreshold(), Set.of());
-        List<KillItemBo> hardKillBlue = pickTop(blueScores, killNumberConfig.getMaxHardKillBlue(),
-            killNumberConfig.getHardThreshold(), Set.of());
+        int sampleSize = records.size();
+        List<KillItemBo> hardKillRed = pickTop(redScores, redOmission, sampleSize,
+            killNumberConfig.getMaxHardKillRed(), killNumberConfig.getHardThreshold(), Set.of(), true);
+        List<KillItemBo> hardKillBlue = pickTop(blueScores, blueOmission, sampleSize,
+            killNumberConfig.getMaxHardKillBlue(), killNumberConfig.getHardThreshold(), Set.of(), false);
 
         //默认吧最近一期的都杀掉
         hardKillBlue.add(
-            KillItemBo.builder().ball(defaultKillNumbers.getBlueBall()).score(1.0).reason("上一期出现过").build());
+            KillItemBo.builder().ball(defaultKillNumbers.getBlueBall()).score(1.0).reason("上期开出").build());
         defaultKillNumbers.getRedBalls().stream()
-            .map(redball -> KillItemBo.builder().ball(redball).score(1.0).reason("上一期出现过").build())
-            .forEach(hardKillBlue::add);
+            .map(redball -> KillItemBo.builder().ball(redball).score(1.0).reason("上期开出").build())
+            .forEach(hardKillRed::add);
 
         KillNumberResultBo result = KillNumberResultBo.builder()
             .hardKillRed(hardKillRed)
             .hardKillBlue(hardKillBlue)
-            .basis(buildBasis(records.size()))
+            .basis(buildBasis(sampleSize))
             .build();
 
         log.info("杀号计算完成: 硬杀红={}, 硬杀蓝={}",
@@ -84,19 +92,20 @@ public class KillNumberServiceImpl implements IKillNumberService {
 
     // ==================== 红球得分 ====================
 
-    private Map<Integer, Double> calculateRedScores(List<DrawRecord> records) {
+    private Map<Integer, Double> calculateRedScores(List<DrawRecord> records, Map<Integer, Integer> omission) {
         Map<Integer, Integer> frequency = countRedFrequency(records);
-        Map<Integer, Integer> omission = calcRedOmission(records);
         Map<Integer, Double> zoneScores = calcZoneScores(frequency);
         Map<Integer, Double> tailScores = calcTailScores(frequency);
 
+        int sampleSize = records.size();
         Map<Integer, Double> scores = new LinkedHashMap<>();
         for (int b = RED_MIN; b <= RED_MAX; b++) {
             Map<String, Double> dims = new HashMap<>();
             dims.put("frequency", frequencyScore(frequency.getOrDefault(b, 0)));//出现频率
-            dims.put("omission", omissionScore(omission.getOrDefault(b, records.size())));//一楼频率
+            dims.put("omission", omissionScore(omission.getOrDefault(b, sampleSize)));//遗漏频率
             dims.put("zone", zoneScores.getOrDefault(b, 0.0));//出现区间
             dims.put("tail", tailScores.getOrDefault(b, 0.0));//尾部
+            dims.put("rebound", reboundScore(omission.getOrDefault(b, sampleSize), sampleSize));//冷号回补保护
             scores.put(b, weightedScore(dims));
         }
         return scores;
@@ -182,16 +191,16 @@ public class KillNumberServiceImpl implements IKillNumberService {
 
     // ==================== 蓝球得分 ====================
 
-    private Map<Integer, Double> calculateBlueScores(List<DrawRecord> records) {
+    private Map<Integer, Double> calculateBlueScores(List<DrawRecord> records, Map<Integer, Integer> omission) {
         Map<Integer, Integer> frequency = countBlueFrequency(records);
-        Map<Integer, Integer> omission = calcBlueOmission(records);
 
+        int sampleSize = records.size();
         Map<Integer, Double> scores = new LinkedHashMap<>();
         for (int b = BLUE_MIN; b <= BLUE_MAX; b++) {
             Map<String, Double> dims = new HashMap<>();
             dims.put("frequency", blueFrequencyScore(frequency.getOrDefault(b, 0)));
-            dims.put("omission", blueOmissionScore(omission.getOrDefault(b, records.size())));
-            scores.put(b, weightedScore(dims));
+            dims.put("omission", blueOmissionScore(omission.getOrDefault(b, sampleSize)));
+            scores.put(b, blueWeightedScore(dims));
         }
         return scores;
     }
@@ -271,10 +280,50 @@ public class KillNumberServiceImpl implements IKillNumberService {
         return 0.0;
     }
 
+    /**
+     * 冷号回补保护得分。
+     * <p>当号码遗漏期数占样本比例超过极值阈值（默认 0.8）时，认为该号码即将「解冻」回补，
+     * 给负分对冲冷热/遗漏维度的杀号得分，避免极冷号被误杀。
+     * <p>该维度是「冷号继续冷」理论的对冲：极值遗漏的号码反而最有可能开出。
+     *
+     * @param miss       号码遗漏期数
+     * @param sampleSize 样本大小
+     * @return 负分（保护分），未触发时返回 0.0
+     */
+    private double reboundScore(int miss, int sampleSize) {
+        if (sampleSize <= 0) {
+            return 0.0;
+        }
+        KillNumberConfig.ReboundThreshold r = killNumberConfig.getRebound();
+        double ratio = (double) miss / sampleSize;
+        if (ratio > r.getExtremeRatio()) {
+            return r.getProtectScore();
+        }
+        return 0.0;
+    }
+
     // ==================== 加权融合 ====================
 
     private double weightedScore(Map<String, Double> dims) {
         Map<String, Double> weights = killNumberConfig.getWeights();
+        double weightSum = weights.values().stream().mapToDouble(Double::doubleValue).sum();
+        if (weightSum <= 0) {
+            return 0.0;
+        }
+        double sum = 0.0;
+        for (Map.Entry<String, Double> e : weights.entrySet()) {
+            sum += e.getValue() * dims.getOrDefault(e.getKey(), 0.0);
+        }
+        return sum / weightSum;
+    }
+
+    /**
+     * 蓝球专用加权融合：仅按 {@link KillNumberConfig#getBlueWeights()} 中存在的维度归一化，
+     * 避免被红球 rebound/zone/tail 权重稀释分母。
+     * <p>蓝球只参与 frequency + omission，归一化分母 = 这两维权重之和。
+     */
+    private double blueWeightedScore(Map<String, Double> dims) {
+        Map<String, Double> weights = killNumberConfig.getBlueWeights();
         double weightSum = weights.values().stream().mapToDouble(Double::doubleValue).sum();
         if (weightSum <= 0) {
             return 0.0;
@@ -291,13 +340,26 @@ public class KillNumberServiceImpl implements IKillNumberService {
     /**
      * 按综合得分筛选硬杀清单：得分 ≥ threshold、不在 exclude 中、按得分降序取前 maxSize 个。
      *
-     * @param exclude 需排除的号码集合（预留扩展，当前硬杀为空集）
+     * <p>极值遗漏白名单保护（仅红球启用）：号码遗漏期数 / 样本大小 ≥
+     * {@link KillNumberConfig#getExtremeOmissionWhitelistRatio()} 时，即使综合得分达标也
+     * 不进入硬杀清单，避免极冷即将解冻的号码被误杀（与 rebound 维度双保险）。
+     *
+     * @param omission        各号码遗漏期数
+     * @param sampleSize      样本大小
+     * @param exclude         需排除的号码集合（预留扩展，当前硬杀为空集）
+     * @param applyWhitelist  是否启用极值遗漏白名单保护（红球 true，蓝球 false）
      */
-    private List<KillItemBo> pickTop(Map<Integer, Double> scores, int maxSize, double threshold,
-                                     Set<Integer> exclude) {
+    private List<KillItemBo> pickTop(Map<Integer, Double> scores, Map<Integer, Integer> omission,
+                                     int sampleSize, int maxSize, double threshold,
+                                     Set<Integer> exclude, boolean applyWhitelist) {
+        int whitelistMiss = applyWhitelist
+            ? (int) Math.ceil(sampleSize * killNumberConfig.getExtremeOmissionWhitelistRatio())
+            : Integer.MAX_VALUE;
         return scores.entrySet().stream()
             .filter(e -> e.getValue() >= threshold)
             .filter(e -> !exclude.contains(e.getKey()))
+            // 极值遗漏白名单（仅红球）：遗漏期数 ≥ whitelistMiss 的号码不进硬杀清单
+            .filter(e -> omission.getOrDefault(e.getKey(), sampleSize) < whitelistMiss)
             .sorted(Map.Entry.<Integer, Double>comparingByValue().reversed())
             .limit(maxSize)
             .map(e -> KillItemBo.builder()
@@ -312,9 +374,10 @@ public class KillNumberServiceImpl implements IKillNumberService {
 
     private String buildBasis(int sampleSize) {
         return String.format(
-            "基于最近 %d 期样本，按 frequency(冷热)/omission(遗漏)/zone(三区)/tail(尾数) 四维度加权融合，"
-                + "硬杀阈值 %.2f。",
-            sampleSize, killNumberConfig.getHardThreshold());
+            "基于最近 %d 期样本，按 frequency(冷热)/omission(遗漏)/zone(三区)/tail(尾数)/rebound(冷号回补保护) "
+                + "五维度加权融合，硬杀阈值 %.2f；红球极值遗漏(≥%.0f%%样本)号码白名单保护不进硬杀。",
+            sampleSize, killNumberConfig.getHardThreshold(),
+            killNumberConfig.getExtremeOmissionWhitelistRatio() * 100);
     }
 
     private String buildReason(int ball, double score) {

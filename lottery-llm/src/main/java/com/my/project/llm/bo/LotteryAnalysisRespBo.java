@@ -84,6 +84,14 @@ public class LotteryAnalysisRespBo {
      */
     private KillNumberResultBo killNumbers;
 
+    /**
+     * 冷热温号码分析结果（可选）。
+     * <p>由 {@code IColdHotAnalysisService} 基于原始样本统计产出，将红球/蓝球分为
+     * 热号 / 温号 / 冷号三类。随 {@code analysisReportJson} 序列化后透传给调优阶段，
+     * 供 LLM 直接引用冷热分类，避免自行从频次推断。
+     */
+    private ColdHotAnalysisBo coldHotAnalysis;
+
     /** 综合结论与选号建议 */
     private String conclusion;
 

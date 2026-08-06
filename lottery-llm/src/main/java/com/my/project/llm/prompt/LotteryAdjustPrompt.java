@@ -36,6 +36,12 @@ public final class LotteryAdjustPrompt {
                  （含 adjustedRedBalls、adjustedBlueBall、complexTicket.redBalls/blueBalls、
                   finalComplexTicket.redBalls/blueBalls、finalSingleTickets.redBalls/blueBall）；
                - 若 `killNumbers` 为 null 或各清单为空，则忽略本条约束。
+            5. 【冷热温硬约束】若报告存在 `coldHotAnalysis` 字段：
+               - `redHotBalls` / `redWarmBalls` / `redColdBalls` 为红球热/温/冷号清单，
+                 `blueHotBalls` / `blueWarmBalls` / `blueColdBalls` 为蓝球热/温/冷号清单；
+               - 须直接使用上述清单判定每个候选号码的冷热档位，**不得**再自行从频次表推断冷热；
+               - 冷热配比要求见下方调优规则（热号≤上限、冷号≥下限等）；
+               - 若 `coldHotAnalysis` 为 null，则按报告频次表自行估算冷热。
 
             【特征分析报告】
             {report}
@@ -47,7 +53,9 @@ public final class LotteryAdjustPrompt {
             一、单式号码组调整（对每一组，写入 adjustedTickets）
             1. 红球比对：将 6 个红球与特征报告比对奇偶比、大小比、质合比、012路比、
                跨度、和值区间、三区比、尾数、连号、邻狐传等，并计算冷热结构：
-               热（近100期出现≥15次）、温（8-14次）、冷（≤7次）。
+               - 冷热档位直接取自报告 `coldHotAnalysis.redHotBalls/redWarmBalls/redColdBalls`，
+                 不得自行按频次表估算；
+               - 热（在 redHotBalls 中）、温（在 redWarmBalls 中）、冷（在 redColdBalls 中）。
                - 热号≥4 →「过热」（热号回冷风险高）；
                - 冷号≥3 →「过冷」（可能偏离活跃区间）；
                - 理想单式冷热：热2-3、温2-3、冷1-2。
@@ -62,9 +70,10 @@ public final class LotteryAdjustPrompt {
                (d) 连号违规：拆散 3 连及以上，或多余的 2 连组，换成同区非连续号。
                (e) 冷热已均衡且形态无明显偏离时，可不替换。
                替换须给出 from、to、basis；替换后重新升序。
-            3. 蓝球比对与替换：蓝球 1-16。冷热：热≥8次、温4-7次、冷≤3次。
-               - 过热蓝球 → 优先换为同路或邻区的温蓝球；basis 注明「蓝球冷热均衡」。
-               - 极冷蓝球（≤2次）→ 可换温号，但最终复式阶段仍须保留冷/温分散。
+            3. 蓝球比对与替换：蓝球 1-16。冷热档位直接取自报告
+               `coldHotAnalysis.blueHotBalls/blueWarmBalls/blueColdBalls`，不得自行按频次表估算。
+               - 过热蓝球（在 blueHotBalls 中）→ 优先换为同路或邻区的温蓝球；basis 注明「蓝球冷热均衡」。
+               - 极冷蓝球（在 blueColdBalls 中）→ 可换温号，但最终复式阶段仍须保留冷/温分散。
                - 若报告显示蓝球「狐」占比高，单式蓝球优先选相对上期的狐号或温号，
                  避免默认追上期邻号/重号或报告 Top1 热蓝。
             4. 若已整体合理可不做替换，但仍须输出 adjustedRedBalls 与 adjustedBlueBall。
@@ -75,13 +84,13 @@ public final class LotteryAdjustPrompt {
             2. 基于「本组 adjustedRedBalls / adjustedBlueBall」扩展，须同时满足：
                【红球 7-10 个】
                - 须包含本组全部 6 个调整后红球，再补 1-4 个号；
-               - 冷热：热:温:冷 ≈ 3:3:2 或 4:3:2（热号≤4，冷号≥2）；禁止补号全为超热胆码；
+               - 冷热（取自 coldHotAnalysis）：热:温:冷 ≈ 3:3:2 或 4:3:2（热号≤4，冷号≥2）；禁止补号全为超热胆码；
                - 分区：一区/二区/三区 每区至少 2 个；
                - 连号：最长连号≤2，2 连号组数≤2；禁止出现 3 连及以上；
                - 相对报告最近一期（邻狐传）：重号≤2；至少保留 2 个明确狐号（与上期既不重复也不相邻）。
                【蓝球 2-5 个】
                - 须包含本组 adjustedBlueBall；
-               - 热蓝≤2；至少 1 个温号 + 至少 1 个冷号（出现≤3次，或四分区中的偏冷区）；
+               - 冷热（取自 coldHotAnalysis）：热蓝≤2；至少 1 个温号 + 至少 1 个冷号（在 blueColdBalls 中，或四分区中的偏冷区）；
                - 四分区（1-4/5-8/9-12/13-16）至少覆盖 2 个不同区；不得 4 个蓝全落同一热区；
                - 至少 1 个相对上期蓝球的狐号（|差|≥2）。
             3. totalBets = C(红球个数, 6) × 蓝球个数，需准确。
@@ -94,7 +103,7 @@ public final class LotteryAdjustPrompt {
                超热号入选总数红球≤3、蓝球≤2。
             2. 红球 7-10、蓝球 2-5，互异升序，且必须同时满足：
                - 形态：奇偶、大小、三区比、和值、跨度落在报告高频或次高频区间附近；
-               - 冷热：红球热≤4、温≥2、冷≥2；蓝球热≤2，且含≥1 温、≥1 冷；
+               - 冷热（取自 coldHotAnalysis）：红球热≤4、温≥2、冷≥2；蓝球热≤2，且含≥1 温、≥1 冷；
                - 分区：红球每区≥2；蓝球覆盖≥2 个四分区，建议含三区(9-12)或四区之一作分散；
                - 连号：最长≤2，2 连组数≤2；
                - 邻狐传：红球相对上期重号≤2、狐号≥2；蓝球至少 1 个狐号。

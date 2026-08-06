@@ -22,11 +22,11 @@ public class SsqPrizeCheckerUtils {
      * @return 奖级
      */
     public static PrizeLevelEnum checkPrize(List<Integer> winningRedBalls, int winningBlueBall,
-        List<Integer> userRedBalls, int userBlueBall) {
+        List<Integer> userRedBalls, List<Integer> userBlueBalls) {
         // 统计红球命中数
         long redHitCount = userRedBalls.stream().filter(winningRedBalls::contains).count();
         // 蓝球命中
-        boolean blueHit = (userBlueBall == winningBlueBall);
+        boolean blueHit = userBlueBalls.contains(winningBlueBall);
         // 判断奖级
         if (redHitCount == 6 && blueHit) {
             return PrizeLevelEnum.FIRST;

@@ -3,8 +3,8 @@ package com.my.project.llm.service.impl;
 import com.alibaba.fastjson.JSON;
 import com.my.project.llm.bo.LotteryAnalysisReqBo;
 import com.my.project.llm.bo.LotteryAnalysisRespBo;
-import com.my.project.llm.config.KillNumberConfig;
 import com.my.project.llm.prompt.LotteryAnalysisPrompt;
+import com.my.project.llm.service.IColdHotAnalysisService;
 import com.my.project.llm.service.IKillNumberService;
 import com.my.project.llm.service.ILotteryAnalysisService;
 import lombok.extern.slf4j.Slf4j;
@@ -26,6 +26,9 @@ import org.springframework.stereotype.Service;
  * {@link LotteryAnalysisReqBo#getEnableKillNumber()} 覆盖全局配置
  * {@code lottery.llm.kill-number.enabled}。
  *
+ * <p>同时由 {@link IColdHotAnalysisService} 基于原始样本统计冷热温号码分类，
+ * 挂到 {@link LotteryAnalysisRespBo#getColdHotAnalysis()}，供调优阶段 LLM 直接引用。
+ *
  * @author 刘强
  * @version 2026/07/21 20:30
  **/
@@ -35,11 +38,14 @@ public class LotteryAnalysisServiceImpl implements ILotteryAnalysisService {
 
     private final ChatClient lotteryChatClient;
     private final IKillNumberService killNumberService;
+    private final IColdHotAnalysisService coldHotAnalysisService;
 
     public LotteryAnalysisServiceImpl(@Qualifier("lotteryChatClient") ChatClient lotteryChatClient,
-                                      IKillNumberService killNumberService) {
+                                      IKillNumberService killNumberService,
+                                      IColdHotAnalysisService coldHotAnalysisService) {
         this.lotteryChatClient = lotteryChatClient;
         this.killNumberService = killNumberService;
+        this.coldHotAnalysisService = coldHotAnalysisService;
     }
 
     @Override
@@ -57,10 +63,10 @@ public class LotteryAnalysisServiceImpl implements ILotteryAnalysisService {
                         .param("format", FORMAT_HINT))
                 .call()
                 .entity(LotteryAnalysisRespBo.class);
-
         result.setKillNumbers(
             reqBo.getEnableKillNumber() ? killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers())
                 : null);
+        result.setColdHotAnalysis(coldHotAnalysisService.calculate(reqBo.getRecords()));
         log.info("DeepSeek 号码特征分析完成:{}", JSON.toJSONString(result));
         return result;
     }

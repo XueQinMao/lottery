@@ -48,7 +48,7 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
     private final ISmartSelectService smartSelectService;
     private final LotteryAnalysisMultiLevelCache multiLevelCache;
 
-    private static final String CACHE_KEY_PREFIX = "LotteryFeatureAnalysisServiceImpl.analyzeLatest:";
+    private static final String CACHE_KEY_PREFIX = "LotteryFeatureAnalysisServiceImpl.analyzeLatest";
 
     @Override
     public LotteryAnalysisRespBo analyzeLatest(int sampleSize) {
@@ -58,7 +58,7 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
             throw new IllegalStateException("无可用的历史开奖记录用于分析");
         }
         String period = latest.getFirst().getPeriod();
-        String cacheKey = CACHE_KEY_PREFIX + period;
+        String cacheKey = CACHE_KEY_PREFIX + period+sampleSize;
         return multiLevelCache.get(cacheKey, k -> doAnalyze(count));
     }
 
