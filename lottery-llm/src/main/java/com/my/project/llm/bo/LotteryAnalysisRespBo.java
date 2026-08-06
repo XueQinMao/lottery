@@ -77,6 +77,13 @@ public class LotteryAnalysisRespBo {
     /** 蓝球综合分析 */
     private BlueAnalysis blue;
 
+    /**
+     * 杀号计算结果（可选）。
+     * <p>仅当杀号功能启用时由 {@code IKillNumberService} 产出；为 {@code null} 表示未启用。
+     * 随 {@code analysisReportJson} 序列化后透传给调优阶段供 LLM 参考。
+     */
+    private KillNumberResultBo killNumbers;
+
     /** 综合结论与选号建议 */
     private String conclusion;
 

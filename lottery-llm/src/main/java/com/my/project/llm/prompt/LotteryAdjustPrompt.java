@@ -31,6 +31,11 @@ public final class LotteryAdjustPrompt {
                不得把报告 Top 胆码/热号直接当作「必出号码表」整池搬入。
             2. 热号仅作候选池；选号主体必须冷热分散、三区分散，并防范热号集体回冷。
             3. 所有替换与扩号须可核验：冷热档位、分区、连号、邻狐传均需满足硬性约束。
+            4. 【杀号硬约束】若报告中存在 `killNumbers` 字段：
+               - `hardKillRed` / `hardKillBlue` 中的号码为「硬杀清单」，禁止出现在任何输出号码中
+                 （含 adjustedRedBalls、adjustedBlueBall、complexTicket.redBalls/blueBalls、
+                  finalComplexTicket.redBalls/blueBalls、finalSingleTickets.redBalls/blueBall）；
+               - 若 `killNumbers` 为 null 或各清单为空，则忽略本条约束。
 
             【特征分析报告】
             {report}

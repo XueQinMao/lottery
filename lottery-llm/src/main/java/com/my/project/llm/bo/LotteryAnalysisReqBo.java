@@ -25,6 +25,14 @@ public class LotteryAnalysisReqBo {
     /** 样本条数（建议 100） */
     private Integer sampleSize;
 
+    /**
+     * 是否启用杀号功能（请求级开关）。
+     * <p>为 {@code null} 时按全局配置 {@code lottery.llm.kill-number.enabled} 决定；
+     * 显式传 {@code true}/{@code false} 可在单次请求中覆盖全局开关。
+     */
+    private Boolean enableKillNumber;
+
+    private DrawRecord defaultKillNumbers;
     /** 一等奖号码样本 */
     private List<DrawRecord> records;
 

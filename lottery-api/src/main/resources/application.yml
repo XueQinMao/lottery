@@ -35,3 +35,11 @@ lottery:
       sequence: sequence_features.csv
       markov: markov_features.csv
       history: history.csv
+  cache:
+    analysis:
+      # 是否启用 L2 本地磁盘缓存
+      disk-enabled: true
+      # L2 磁盘缓存目录（存放 LLM 分析结果 JSON 文件）
+      disk-dir: E:/home/cache/llm
+      # L1 内存缓存最大容量
+      memory-size: 1

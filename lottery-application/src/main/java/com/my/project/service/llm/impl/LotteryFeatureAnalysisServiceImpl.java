@@ -1,9 +1,6 @@
 package com.my.project.service.llm.impl;
 
 import com.alibaba.fastjson.JSONObject;
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.my.project.llm.bo.LotteryAdjustReqBo;
 import com.my.project.llm.bo.LotteryAdjustRespBo;
 import com.my.project.llm.bo.LotteryAnalysisReqBo;
@@ -15,6 +12,7 @@ import com.my.project.python.bo.ModelPredictOutputBo;
 import com.my.project.service.event.AdjustCompleteEvent;
 import com.my.project.service.history.IHistoryRecordService;
 import com.my.project.service.llm.ILotteryFeatureAnalysisService;
+import com.my.project.service.llm.cache.LotteryAnalysisMultiLevelCache;
 import com.my.project.service.llm.pojo.dto.LLmAdjustDto;
 import com.my.project.service.predict.pojo.vo.PredictCacheVo;
 import com.my.project.service.predict.IPredictCacheService;
@@ -26,8 +24,6 @@ import org.apache.commons.collections4.MapUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.util.Assert;
 
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -49,41 +45,42 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
     private final ILotteryAnalysisService lotteryAnalysisService;
     private final ILotteryAdjustService lotteryAdjustService;
     private final IPredictCacheService predictCacheService;
-
     private final ISmartSelectService smartSelectService;
+    private final LotteryAnalysisMultiLevelCache multiLevelCache;
 
-    private static final String CACHE_KEY = "LotteryFeatureAnalysisServiceImpl.analyzeLatest";
-
-    private static final Cache<String, LotteryAnalysisRespBo> ANALYSIS_RESP_BO_CACHE =
-        Caffeine.newBuilder().maximumSize(1)
-            .evictionListener((String key, LotteryAnalysisRespBo value, RemovalCause cause) -> {
-                log.warn("Cache ANALYSIS_RESP_BO_CACHE evicted: key={}, cause={}", key, cause);
-            }).recordStats().build();
+    private static final String CACHE_KEY_PREFIX = "LotteryFeatureAnalysisServiceImpl.analyzeLatest:";
 
     @Override
     public LotteryAnalysisRespBo analyzeLatest(int sampleSize) {
-        var analysisRespBo = ANALYSIS_RESP_BO_CACHE.getIfPresent(CACHE_KEY);
-        if (Objects.nonNull(analysisRespBo)) {
-            return analysisRespBo;
-        }
         int count = Math.max(sampleSize, 1);
-        log.info("拉取最近 {} 期历史开奖记录用于 LLM 分析", count);
-        var records = historyRecordService.getLatestRecords(count);
+        var latest = historyRecordService.getLatestRecords(1);
+        if (CollectionUtils.isEmpty(latest)) {
+            throw new IllegalStateException("无可用的历史开奖记录用于分析");
+        }
+        String period = latest.getFirst().getPeriod();
+        String cacheKey = CACHE_KEY_PREFIX + period;
+        return multiLevelCache.get(cacheKey, k -> doAnalyze(count));
+    }
+
+    private LotteryAnalysisRespBo doAnalyze(int sampleSize) {
+        log.info("拉取最近 {} 期历史开奖记录用于 LLM 分析", sampleSize);
+        var records = historyRecordService.getLatestRecords(sampleSize);
         if (CollectionUtils.isEmpty(records)) {
             throw new IllegalStateException("无可用的历史开奖记录用于分析");
         }
         var drawRecords = records.stream().map(this::toDrawRecord).collect(Collectors.toList());
-        var reqBo = LotteryAnalysisReqBo.builder().sampleSize(drawRecords.size()).records(drawRecords).build();
-        var analyzeResult = lotteryAnalysisService.analyze(reqBo);
-        if (Objects.nonNull(analyzeResult)) {
-            ANALYSIS_RESP_BO_CACHE.put(CACHE_KEY, analyzeResult);
-        }
-        return analyzeResult;
+        var reqBo = LotteryAnalysisReqBo.builder()
+            .sampleSize(drawRecords.size())
+            .enableKillNumber(true)
+            .defaultKillNumbers(toDrawRecord(records.getFirst()))
+            .records(drawRecords)
+            .build();
+        return lotteryAnalysisService.analyze(reqBo);
     }
 
     @Override
     public LotteryAdjustRespBo adjust(LLmAdjustDto dto) {
-        var respBo = analyzeLatest(100);
+        var respBo = analyzeLatest(30);
         var tickets = CollectionUtils.emptyIfNull(dto.getDrawRecords()).stream().map(
                 d -> LotteryAdjustReqBo.PredictTicket.builder().redBalls(d.getRedballs()).blueBall(d.getBlueball()).build())
             .toList();

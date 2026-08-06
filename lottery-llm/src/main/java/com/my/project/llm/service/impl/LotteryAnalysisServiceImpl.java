@@ -3,7 +3,9 @@ package com.my.project.llm.service.impl;
 import com.alibaba.fastjson.JSON;
 import com.my.project.llm.bo.LotteryAnalysisReqBo;
 import com.my.project.llm.bo.LotteryAnalysisRespBo;
+import com.my.project.llm.config.KillNumberConfig;
 import com.my.project.llm.prompt.LotteryAnalysisPrompt;
+import com.my.project.llm.service.IKillNumberService;
 import com.my.project.llm.service.ILotteryAnalysisService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -19,6 +21,11 @@ import org.springframework.stereotype.Service;
  * <p>采用结构化输出（Structured Output）方式，将大模型返回的 JSON 直接反序列化为
  * {@link LotteryAnalysisRespBo}，避免手工解析。
  *
+ * <p>可选启用杀号功能：在 LLM 分析完成后，由 {@link IKillNumberService} 基于原始样本
+ * 计算杀号清单并挂到 {@link LotteryAnalysisRespBo#getKillNumbers()}。开关由请求级
+ * {@link LotteryAnalysisReqBo#getEnableKillNumber()} 覆盖全局配置
+ * {@code lottery.llm.kill-number.enabled}。
+ *
  * @author 刘强
  * @version 2026/07/21 20:30
  **/
@@ -27,9 +34,12 @@ import org.springframework.stereotype.Service;
 public class LotteryAnalysisServiceImpl implements ILotteryAnalysisService {
 
     private final ChatClient lotteryChatClient;
+    private final IKillNumberService killNumberService;
 
-    public LotteryAnalysisServiceImpl(@Qualifier("lotteryChatClient") ChatClient lotteryChatClient) {
+    public LotteryAnalysisServiceImpl(@Qualifier("lotteryChatClient") ChatClient lotteryChatClient,
+                                      IKillNumberService killNumberService) {
         this.lotteryChatClient = lotteryChatClient;
+        this.killNumberService = killNumberService;
     }
 
     @Override
@@ -37,7 +47,7 @@ public class LotteryAnalysisServiceImpl implements ILotteryAnalysisService {
         if (reqBo == null || reqBo.getRecords() == null || reqBo.getRecords().isEmpty()) {
             throw new IllegalArgumentException("分析样本不能为空");
         }
-        log.info("开始调用 DeepSeek 进行号码特征分析，样本数: {}",reqBo.getRecords().size());
+        log.info("开始调用 DeepSeek 进行号码特征分析，样本数: {}", reqBo.getRecords().size());
 
         String recordsJson = JSON.toJSONString(reqBo.getRecords());
 
@@ -48,6 +58,9 @@ public class LotteryAnalysisServiceImpl implements ILotteryAnalysisService {
                 .call()
                 .entity(LotteryAnalysisRespBo.class);
 
+        result.setKillNumbers(
+            reqBo.getEnableKillNumber() ? killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers())
+                : null);
         log.info("DeepSeek 号码特征分析完成:{}", JSON.toJSONString(result));
         return result;
     }
