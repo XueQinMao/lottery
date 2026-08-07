@@ -1,6 +1,7 @@
 package com.my.project.service.predict.impl;
 
 import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson2.JSON;
 import com.my.project.persistence.entity.PredictLog;
 import com.my.project.service.event.PredictCompleteEvent;
 import com.my.project.service.predict.IInitPythonProcessService;
@@ -18,6 +19,8 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -26,6 +29,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 /**
  * PredictServiceImpl
@@ -70,6 +74,17 @@ public class PredictServiceImpl implements IPredictService {
     private Consumer<SsqCombinationBo> combinationConsumer(IPredictResultHandler handler) {
         return combination -> {
             Instant singleStart = Instant.now();
+            //计算红球总和要在[90-150]
+            int sum = combination.getRedBalls().stream().mapToInt(Integer::intValue).sum();
+            if(sum<=90 || sum>=150){
+                log.warn("生成的号码组 {} 和值不满足特征，跳过", JSON.toJSONString(combination));
+                return;
+            }
+            List<Integer> sortedList = combination.getRedBalls().stream().sorted(Comparator.naturalOrder()).toList();
+            int diff = sortedList.getLast()- sortedList.getFirst();
+            if(diff<16 || diff>28){
+                log.warn("生成的号码组 {} 差值不满足特征，跳过", JSON.toJSONString(combination));
+            }
             Supplier<String> supplyAsyncSupplier = () -> {
                 // 与 Python predict.py 单注入口统一：type=predict + second_fusion_model
                 var params =
