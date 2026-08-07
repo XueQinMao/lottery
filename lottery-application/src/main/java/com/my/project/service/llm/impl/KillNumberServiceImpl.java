@@ -1,10 +1,10 @@
-package com.my.project.llm.service.impl;
+package com.my.project.service.llm.impl;
 
 import com.my.project.llm.bo.KillNumberResultBo;
 import com.my.project.llm.bo.KillNumberResultBo.KillItemBo;
 import com.my.project.llm.bo.LotteryAnalysisReqBo.DrawRecord;
-import com.my.project.llm.config.KillNumberConfig;
-import com.my.project.llm.service.IKillNumberService;
+import com.my.project.service.llm.IKillNumberService;
+import com.my.project.service.llm.config.KillNumberConfig;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

@@ -1,7 +1,6 @@
-package com.my.project.llm.config;
+package com.my.project.service.llm.config;
 
 import lombok.Data;
-import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;

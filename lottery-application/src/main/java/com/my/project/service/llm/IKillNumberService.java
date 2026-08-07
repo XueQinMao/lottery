@@ -1,4 +1,4 @@
-package com.my.project.llm.service;
+package com.my.project.service.llm;
 
 import com.my.project.llm.bo.KillNumberResultBo;
 import com.my.project.llm.bo.LotteryAnalysisReqBo.DrawRecord;

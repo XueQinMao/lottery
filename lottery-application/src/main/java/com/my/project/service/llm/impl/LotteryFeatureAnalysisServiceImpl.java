@@ -11,7 +11,10 @@ import com.my.project.persistence.entity.HistoryRecord;
 import com.my.project.python.bo.ModelPredictOutputBo;
 import com.my.project.service.event.AdjustCompleteEvent;
 import com.my.project.service.history.IHistoryRecordService;
+import com.my.project.service.llm.IColdHotAnalysisService;
+import com.my.project.service.llm.IKillNumberService;
 import com.my.project.service.llm.ILotteryFeatureAnalysisService;
+import com.my.project.service.llm.IThreeZoneRatioPredictService;
 import com.my.project.service.llm.cache.LotteryAnalysisMultiLevelCache;
 import com.my.project.service.llm.pojo.dto.LLmAdjustDto;
 import com.my.project.service.predict.pojo.vo.PredictCacheVo;
@@ -32,7 +35,16 @@ import java.util.stream.Collectors;
  *
  * <p>从历史开奖记录中取最近 N 期一等奖号码（双色球即 6 红球 + 1 蓝球），
  * 组装为 {@link LotteryAnalysisReqBo} 后调用 {@link ILotteryAnalysisService}。
- *
+ * * <p>可选启用杀号功能：在 LLM 分析完成后，由 {@link IKillNumberService} 基于原始样本
+ *  * 计算杀号清单并挂到 {@link LotteryAnalysisRespBo#getKillNumbers()}。开关由请求级
+ *  * {@link LotteryAnalysisReqBo#getEnableKillNumber()} 覆盖全局配置
+ *  * {@code lottery.llm.kill-number.enabled}。
+ *  *
+ *  * <p>同时由 {@link IColdHotAnalysisService} 基于原始样本统计冷热温号码分类，
+ *  * 挂到 {@link LotteryAnalysisRespBo#getColdHotAnalysis()}，供调优阶段 LLM 直接引用。
+ *  *
+ *  * <p>同时由 {@link IThreeZoneRatioPredictService} 基于「频率先验 + 马尔可夫转移」
+ *  * 混合模型预测下一期三区比，挂到 {@link LotteryAnalysisRespBo#getPredictedThreeZoneRatio()}。
  * @author 刘强
  * @version 2026/07/21 20:36
  **/
@@ -48,6 +60,10 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
     private final ISmartSelectService smartSelectService;
     private final LotteryAnalysisMultiLevelCache multiLevelCache;
 
+    private final IKillNumberService killNumberService;
+    private final IColdHotAnalysisService coldHotAnalysisService;
+    private final IThreeZoneRatioPredictService threeZoneRatioPredictService;
+
     private static final String CACHE_KEY_PREFIX = "LotteryFeatureAnalysisServiceImpl.analyzeLatest";
 
     @Override
@@ -58,7 +74,8 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
             throw new IllegalStateException("无可用的历史开奖记录用于分析");
         }
         String period = latest.getFirst().getPeriod();
-        String cacheKey = CACHE_KEY_PREFIX + period+sampleSize;
+        String cacheKey = CACHE_KEY_PREFIX + period + sampleSize;
+        //        String cacheKey = CACHE_KEY_PREFIX + UUID.randomUUID().toString();
         return multiLevelCache.get(cacheKey, k -> doAnalyze(count));
     }
 
@@ -69,13 +86,15 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
             throw new IllegalStateException("无可用的历史开奖记录用于分析");
         }
         var drawRecords = records.stream().map(this::toDrawRecord).collect(Collectors.toList());
-        var reqBo = LotteryAnalysisReqBo.builder()
-            .sampleSize(drawRecords.size())
-            .enableKillNumber(true)
-            .defaultKillNumbers(toDrawRecord(records.getFirst()))
-            .records(drawRecords)
-            .build();
-        return lotteryAnalysisService.analyze(reqBo);
+        var reqBo = LotteryAnalysisReqBo.builder().sampleSize(drawRecords.size()).enableKillNumber(true)
+            .defaultKillNumbers(toDrawRecord(records.getFirst())).records(drawRecords).build();
+        var result = lotteryAnalysisService.analyze(reqBo);
+        result.setKillNumbers(
+            reqBo.getEnableKillNumber() ? killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers())
+                : null);
+        result.setColdHotAnalysis(coldHotAnalysisService.calculate(reqBo.getRecords()));
+        result.setPredictedThreeZoneRatio(threeZoneRatioPredictService.predict(reqBo.getRecords()));
+        return result;
     }
 
     @Override

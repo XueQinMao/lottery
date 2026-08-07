@@ -92,6 +92,14 @@ public class LotteryAnalysisRespBo {
      */
     private ColdHotAnalysisBo coldHotAnalysis;
 
+    /**
+     * 下一期三区比预测结果（可选）。
+     * <p>由 {@code IThreeZoneRatioPredictService} 基于「频率先验 + 马尔可夫转移」
+     * 混合模型预测，给出 Top-K 候选三区比及概率。随 {@code analysisReportJson} 序列化后
+     * 透传给调优阶段，供 LLM 选号形态参考。
+     */
+    private ThreeZoneRatioPredictBo predictedThreeZoneRatio;
+
     /** 综合结论与选号建议 */
     private String conclusion;
 

@@ -1,7 +1,6 @@
-package com.my.project.llm.config;
+package com.my.project.service.llm.config;
 
 import lombok.Data;
-import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 /**
@@ -37,7 +36,7 @@ public class ColdHotConfig {
          * 热号比例：出现次数 ≥ hotRatio × 期望次数 → 热号。
          * <p>30 期下期望 ≈ 5.45，默认 1.8 → ≥ 9.8 即 ≥10 次为热号（约 2 倍期望）。
          */
-        private double hotRatio = 1.8;
+        private double hotRatio = 1.3;
         /**
          * 冷号比例：出现次数 ≤ coldRatio × 期望次数 → 冷号。
          * <p>30 期下期望 ≈ 5.45，默认 0.4 → ≤ 2.2 即 ≤2 次为冷号（约 0.4 倍期望）。

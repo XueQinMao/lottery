@@ -1,9 +1,9 @@
-package com.my.project.llm.service.impl;
+package com.my.project.service.llm.impl;
 
 import com.my.project.llm.bo.ColdHotAnalysisBo;
 import com.my.project.llm.bo.LotteryAnalysisReqBo.DrawRecord;
-import com.my.project.llm.config.ColdHotConfig;
-import com.my.project.llm.service.IColdHotAnalysisService;
+import com.my.project.service.llm.IColdHotAnalysisService;
+import com.my.project.service.llm.config.ColdHotConfig;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

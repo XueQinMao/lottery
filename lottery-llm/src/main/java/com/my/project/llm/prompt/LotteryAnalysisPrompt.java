@@ -42,9 +42,6 @@ package com.my.project.llm.prompt;
  **/
 public final class LotteryAnalysisPrompt {
 
-    private LotteryAnalysisPrompt() {
-    }
-
     /**
      * 用户 Prompt 模板。
      * <p>{records} 占位符由 ChatClient 渲染时注入样本 JSON。
