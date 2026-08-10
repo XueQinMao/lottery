@@ -75,20 +75,26 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
         }
         String period = latest.getFirst().getPeriod();
         String cacheKey = CACHE_KEY_PREFIX + period + sampleSize;
-        //        String cacheKey = CACHE_KEY_PREFIX + UUID.randomUUID().toString();
         return multiLevelCache.get(cacheKey, k -> doAnalyze(count));
     }
 
     private LotteryAnalysisRespBo doAnalyze(int sampleSize) {
         log.info("拉取最近 {} 期历史开奖记录用于 LLM 分析", sampleSize);
+        // getLatestRecords 按开奖日降序（最新→最旧）
         var records = historyRecordService.getLatestRecords(sampleSize);
         if (CollectionUtils.isEmpty(records)) {
             throw new IllegalStateException("无可用的历史开奖记录用于分析");
         }
-        var drawRecords = records.stream().map(this::toDrawRecord).collect(Collectors.toList());
+        // 最近一期（降序首条）用于默认杀号
+        var latestRecord = records.getFirst();
+        // 下游杀号遗漏 / 三区比马尔可夫均要求期号升序（最旧→最新）
+        var chronological = new ArrayList<>(records);
+        Collections.reverse(chronological);
+        var drawRecords = chronological.stream().map(this::toDrawRecord).collect(Collectors.toList());
         var reqBo = LotteryAnalysisReqBo.builder().sampleSize(drawRecords.size()).enableKillNumber(true)
-            .defaultKillNumbers(toDrawRecord(records.getFirst())).records(drawRecords).build();
-        var result = lotteryAnalysisService.analyze(reqBo);
+            .defaultKillNumbers(toDrawRecord(latestRecord)).records(drawRecords).build();
+//        var result = lotteryAnalysisService.analyze(reqBo);
+        LotteryAnalysisRespBo result = new LotteryAnalysisRespBo();
         result.setKillNumbers(
             reqBo.getEnableKillNumber() ? killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers())
                 : null);
@@ -104,7 +110,11 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
                 d -> LotteryAdjustReqBo.PredictTicket.builder().redBalls(d.getRedballs()).blueBall(d.getBlueball()).build())
             .toList();
         var adjustReqBo =
-            LotteryAdjustReqBo.builder().analysisReportJson(JSONObject.toJSONString(respBo)).tickets(tickets).build();
+            LotteryAdjustReqBo.builder()
+                .analysisReportJson(JSONObject.toJSONString(respBo))
+                .tickets(tickets)
+                .count(dto.getCount())
+                .build();
         var adjust = lotteryAdjustService.adjust(adjustReqBo);
         AdjustCompleteEvent.of(this, adjust).publish();
         return adjust;

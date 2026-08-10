@@ -14,16 +14,21 @@ import org.springframework.stereotype.Service;
 /**
  * LotteryAdjustServiceImpl
  *
- * <p>调用 DeepSeek：每组输出单式调整 + 组内复式，并额外输出一组最终可购买复式
- * （{@link LotteryAdjustRespBo#getFinalComplexTicket()}）
- * 与两组最终可购买单式（{@link LotteryAdjustRespBo#getFinalSingleTickets()}）。
+ * <p>调用 DeepSeek，支持两种模式（输出 Schema 相同）：
+ * <ul>
+ *     <li>调优：tickets 非空 — 逐组调整 + 组内复式 + 最终复式/单式</li>
+ *     <li>推荐：tickets 为空 — 按特征报告生成 recommendCount 组 + 组内复式 + 最终复式/单式</li>
+ * </ul>
  *
  * @author 刘强
- * @version 2026/07/22 11:50
+ * @version 2026/08/10 10:30
  **/
 @Slf4j
 @Service
 public class LotteryAdjustServiceImpl implements ILotteryAdjustService {
+
+    private static final int DEFAULT_RECOMMEND_COUNT = 3;
+    private static final int MAX_RECOMMEND_COUNT = 10;
 
     private final ChatClient lotteryAdjustChatClient;
 
@@ -33,42 +38,69 @@ public class LotteryAdjustServiceImpl implements ILotteryAdjustService {
 
     @Override
     public LotteryAdjustRespBo adjust(LotteryAdjustReqBo reqBo) {
-        if (reqBo == null || reqBo.getTickets() == null || reqBo.getTickets().isEmpty()) {
-            throw new IllegalArgumentException("待调整的预测号码组不能为空");
+        if (reqBo == null) {
+            throw new IllegalArgumentException("调优入参不能为空");
         }
         if (reqBo.getAnalysisReportJson() == null || reqBo.getAnalysisReportJson().isBlank()) {
             throw new IllegalArgumentException("特征分析报告不能为空");
         }
+        return CollectionUtils.isEmpty(reqBo.getTickets()) ? recommend(reqBo) : adjustExisting(reqBo);
+    }
+
+    /**
+     * 调优模式：对已有号码组逐一调整。
+     */
+    private LotteryAdjustRespBo adjustExisting(LotteryAdjustReqBo reqBo) {
         log.info("开始调用 DeepSeek 调优（单组复式+最终复式+最终单式），候选组数: {}", reqBo.getTickets().size());
 
         String ticketsJson = JSON.toJSONString(reqBo.getTickets());
-
         LotteryAdjustRespBo result = lotteryAdjustChatClient.prompt()
-                .user(u -> u.text(LotteryAdjustPrompt.USER_PROMPT)
-                        .param("report", reqBo.getAnalysisReportJson())
-                        .param("tickets", ticketsJson)
-                        .param("format", FORMAT_HINT))
-                .call()
-                .entity(LotteryAdjustRespBo.class);
+            .user(u -> u.text(LotteryAdjustPrompt.USER_PROMPT)
+                .param("report", reqBo.getAnalysisReportJson())
+                .param("tickets", ticketsJson)
+                .param("format", FORMAT_HINT))
+            .call()
+            .entity(LotteryAdjustRespBo.class);
 
         validateResult(result, reqBo.getTickets().size());
-
-        log.info("DeepSeek 调优完成: groups={}, finalRed={}, finalBlue={}, totalBets={}, singleTickets={}",
-            CollectionUtils.size(result.getAdjustedTickets()),
-            result.getFinalComplexTicket().getRedBalls(),
-            result.getFinalComplexTicket().getBlueBalls(),
-            result.getFinalComplexTicket().getTotalBets(),
-            CollectionUtils.size(result.getFinalSingleTickets()));
         return result;
     }
+
+    /**
+     * 推荐模式：tickets 为空时，按特征报告从零生成 N 组号码。
+     */
+    private LotteryAdjustRespBo recommend(LotteryAdjustReqBo reqBo) {
+        int count = resolveRecommendCount(reqBo.getCount());
+        log.info("开始调用 DeepSeek 推荐（无候选号码，按特征报告生成），组数: {}", count);
+
+        LotteryAdjustRespBo result = lotteryAdjustChatClient.prompt()
+            .user(u -> u.text(LotteryAdjustPrompt.RECOMMEND_PROMPT)
+                .param("report", reqBo.getAnalysisReportJson())
+                .param("count", String.valueOf(count))
+                .param("format", FORMAT_HINT))
+            .call()
+            .entity(LotteryAdjustRespBo.class);
+
+        validateResult(result, count);
+        return result;
+    }
+
+    private int resolveRecommendCount(Integer recommendCount) {
+        int count = recommendCount == null ? DEFAULT_RECOMMEND_COUNT : recommendCount;
+        if (count < 1) {
+            count = DEFAULT_RECOMMEND_COUNT;
+        }
+        return Math.min(count, MAX_RECOMMEND_COUNT);
+    }
+
 
     private void validateResult(LotteryAdjustRespBo result, int ticketCount) {
         if (result == null) {
             throw new IllegalStateException("大模型返回为空");
         }
         if (result.getFinalComplexTicket() == null
-                || CollectionUtils.isEmpty(result.getFinalComplexTicket().getRedBalls())
-                || CollectionUtils.isEmpty(result.getFinalComplexTicket().getBlueBalls())) {
+            || CollectionUtils.isEmpty(result.getFinalComplexTicket().getRedBalls())
+            || CollectionUtils.isEmpty(result.getFinalComplexTicket().getBlueBalls())) {
             throw new IllegalStateException("大模型未返回有效的 finalComplexTicket（最终复式）");
         }
         if (CollectionUtils.isEmpty(result.getFinalSingleTickets())) {
@@ -100,7 +132,7 @@ public class LotteryAdjustServiceImpl implements ILotteryAdjustService {
                 "有 " + missingComplex + " 组未返回有效 complexTicket（单组复式）");
         }
         if (result.getAdjustedTickets().size() != ticketCount) {
-            log.warn("adjustedTickets 数量({})与入参组数({})不一致",
+            log.warn("adjustedTickets 数量({})与期望组数({})不一致",
                 result.getAdjustedTickets().size(), ticketCount);
         }
     }

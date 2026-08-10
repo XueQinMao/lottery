@@ -43,7 +43,11 @@ public class LotteryLlmController {
     }
 
     /**
-     * 便捷入口：直接传红球列表（每注 6 个红球）进行分析。
+     * 调优 / 推荐入口。
+     * <ul>
+     *     <li>drawRecords 非空 → 调优模式</li>
+     *     <li>drawRecords 为空 → 推荐模式，按 recommendCount（默认 3，上限 10）生成号码组</li>
+     * </ul>
      */
     @PostMapping("/adjust")
     public Result<LotteryAdjustRespBo> analyzeByRedBalls(@RequestBody LLmAnalysisReq req) {
@@ -53,7 +57,7 @@ public class LotteryLlmController {
                     .build()).toList();
 
             var lLmAdjustDto =
-                LLmAdjustDto.builder().drawRecords(list).build();
+                LLmAdjustDto.builder().drawRecords(list).count(req.getCount()).build();
             return Result.success(lotteryFeatureAnalysisService.adjust(lLmAdjustDto));
         } catch (Exception e) {
             return Result.error(e.getMessage());

@@ -17,6 +17,10 @@ public class LLmAdjustDto {
 
     private List<DrawRecord> drawRecords;
 
+    /**
+     * 推荐号码组数量（仅 drawRecords 为空时生效，透传给 LotteryAdjustReqBo.count）。
+     */
+    private Integer count;
 
     @Data
     @Builder

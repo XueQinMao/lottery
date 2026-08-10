@@ -9,6 +9,9 @@ import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -33,9 +36,10 @@ import java.util.stream.Collectors;
  * <pre>P_final = freqWeight × P_freq + markovWeight × P_markov（归一化）</pre>
  *
  * <p>三区定义：一区(1-11) / 二区(12-22) / 三区(23-33)。
+ * <p>入口会将样本统一为期号升序（最旧→最新），兼容上游降序传入。
  *
  * @author 刘强
- * @version 2026/08/07 14:05
+ * @version 2026/08/10 11:06
  **/
 @Slf4j
 @Service
@@ -53,8 +57,11 @@ public class ThreeZoneRatioPredictServiceImpl implements IThreeZoneRatioPredictS
             return emptyResult();
         }
 
+        // 统一为期号升序（最旧→最新），兼容上游降序传入
+        List<DrawRecord> chronological = toAscending(records);
+
         // 1. 将每期红球转为三区比字符串（按期号升序）
-        List<String> ratioSequence = records.stream()
+        List<String> ratioSequence = chronological.stream()
             .map(this::toThreeZoneRatio)
             .toList();
 
@@ -153,6 +160,23 @@ public class ThreeZoneRatioPredictServiceImpl implements IThreeZoneRatioPredictS
     }
 
     // ==================== 内部方法 ====================
+
+    /**
+     * 将样本统一为期号升序（最旧 → 最新）。
+     * <p>上游 {@code getLatestRecords} 常按开奖日降序返回；马尔可夫转移依赖时间正序。
+     * 优先按 period 字符串排序；period 缺失时保持原序并反转（假定输入为降序）。
+     */
+    private List<DrawRecord> toAscending(List<DrawRecord> records) {
+        boolean hasPeriod = records.stream().anyMatch(r -> r.getPeriod() != null && !r.getPeriod().isBlank());
+        if (hasPeriod) {
+            return records.stream()
+                .sorted(Comparator.comparing(DrawRecord::getPeriod, Comparator.nullsLast(String::compareTo)))
+                .toList();
+        }
+        List<DrawRecord> copy = new ArrayList<>(records);
+        Collections.reverse(copy);
+        return copy;
+    }
 
     /**
      * 将一期红球转为三区比字符串，形如 "2:2:2"。

@@ -9,6 +9,9 @@ import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -61,12 +64,15 @@ public class KillNumberServiceImpl implements IKillNumberService {
             return emptyResult();
         }
 
-        Map<Integer, Integer> redOmission = calcRedOmission(records);
-        Map<Integer, Integer> blueOmission = calcBlueOmission(records);
-        Map<Integer, Double> redScores = calculateRedScores(records, redOmission);
-        Map<Integer, Double> blueScores = calculateBlueScores(records, blueOmission);
+        // 遗漏计算要求期号升序（最旧→最新），兼容上游降序传入
+        List<DrawRecord> chronological = toAscending(records);
 
-        int sampleSize = records.size();
+        Map<Integer, Integer> redOmission = calcRedOmission(chronological);
+        Map<Integer, Integer> blueOmission = calcBlueOmission(chronological);
+        Map<Integer, Double> redScores = calculateRedScores(chronological, redOmission);
+        Map<Integer, Double> blueScores = calculateBlueScores(chronological, blueOmission);
+
+        int sampleSize = chronological.size();
         List<KillItemBo> hardKillRed = pickTop(redScores, redOmission, sampleSize,
             killNumberConfig.getMaxHardKillRed(), killNumberConfig.getHardThreshold(), Set.of(), true);
         List<KillItemBo> hardKillBlue = pickTop(blueScores, blueOmission, sampleSize,
@@ -371,6 +377,22 @@ public class KillNumberServiceImpl implements IKillNumberService {
     }
 
     // ==================== 工具 ====================
+
+    /**
+     * 将样本统一为期号升序（最旧 → 最新）。
+     * <p>遗漏期数从「最近一期」向前回溯，依赖时间正序。
+     */
+    private List<DrawRecord> toAscending(List<DrawRecord> records) {
+        boolean hasPeriod = records.stream().anyMatch(r -> r.getPeriod() != null && !r.getPeriod().isBlank());
+        if (hasPeriod) {
+            return records.stream()
+                .sorted(Comparator.comparing(DrawRecord::getPeriod, Comparator.nullsLast(String::compareTo)))
+                .toList();
+        }
+        List<DrawRecord> copy = new ArrayList<>(records);
+        Collections.reverse(copy);
+        return copy;
+    }
 
     private String buildBasis(int sampleSize) {
         return String.format(

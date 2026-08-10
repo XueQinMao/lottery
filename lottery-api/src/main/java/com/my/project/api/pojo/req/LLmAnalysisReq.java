@@ -15,6 +15,11 @@ public class LLmAnalysisReq {
 
     private List<DrawRecord> drawRecords;
 
+    /**
+     * 推荐号码组数量（仅 drawRecords 为空时生效）。
+     */
+    private Integer count;
+
     @Data
     public static class DrawRecord {
 

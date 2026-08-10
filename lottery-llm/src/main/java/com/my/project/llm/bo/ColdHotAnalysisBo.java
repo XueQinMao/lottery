@@ -14,17 +14,16 @@ import java.util.List;
  * 随 {@link LotteryAnalysisRespBo#getColdHotAnalysis()} 一并序列化进
  * {@code analysisReportJson}，透传给调优阶段供 LLM 直接使用。
  *
- * <p>分类规则（按样本量自适应，以红球期望出现次数为基准）：
+ * <p>分类规则（频次初档 + 遗漏纠偏）：
  * <ul>
- *     <li>热号：出现次数 ≥ hotRatio × 期望次数</li>
- *     <li>冷号：出现次数 ≤ coldRatio × 期望次数</li>
- *     <li>温号：介于两者之间</li>
+ *     <li>频次：≥ hotRatio×期望 → 热候选；≤ coldRatio×期望 → 冷候选；其余 → 温候选</li>
+ *     <li>遗漏：冷且刚开过 → 温；温且深遗漏 → 冷；热且已冷却 → 温</li>
  * </ul>
  *
  * <p>红球期望 = sampleSize × 6/33；蓝球期望 = sampleSize × 1/16。
  *
  * @author 刘强
- * @version 2026/08/06 19:45
+ * @version 2026/08/10 11:35
  **/
 @Data
 @Builder
@@ -32,13 +31,13 @@ import java.util.List;
 @AllArgsConstructor
 public class ColdHotAnalysisBo {
 
-    /** 红球热号清单（出现次数 ≥ hotRatio × 期望），按号码升序 */
+    /** 红球热号清单，按号码升序 */
     private List<Integer> redHotBalls;
 
-    /** 红球温号清单（介于冷热阈值之间），按号码升序 */
+    /** 红球温号清单，按号码升序 */
     private List<Integer> redWarmBalls;
 
-    /** 红球冷号清单（出现次数 ≤ coldRatio × 期望），按号码升序 */
+    /** 红球冷号清单，按号码升序 */
     private List<Integer> redColdBalls;
 
     /** 蓝球热号清单，按号码升序 */

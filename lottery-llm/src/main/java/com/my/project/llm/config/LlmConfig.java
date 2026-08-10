@@ -15,11 +15,11 @@ import org.springframework.context.annotation.Configuration;
  * <p>提供两个 ChatClient：
  * <ul>
  *     <li>{@code lotteryChatClient}：号码特征分析（红球 15 维 + 蓝球 11 维）</li>
- *     <li>{@code lotteryAdjustChatClient}：基于特征值对预测号码做调整并输出复式玩法</li>
+ *     <li>{@code lotteryAdjustChatClient}：调优（有候选）或推荐（无候选），输出 Schema 相同</li>
  * </ul>
  *
  * @author 刘强
- * @version 2026/07/21 20:20
+ * @version 2026/08/10 10:42
  **/
 @Configuration
 public class LlmConfig {
@@ -44,14 +44,18 @@ public class LlmConfig {
     public ChatClient lotteryAdjustChatClient(ChatModel chatModel) {
         return ChatClient.builder(chatModel)
                 .defaultSystem("""
-                        你是一名资深的双色球选号调优顾问。
-                        你会收到一份历史一等奖特征报告，以及若干组候选预测号码。
-                        你的任务是：
-                        1. 逐组比对并微调单式，并为【每一组】生成对应的复式（complexTicket：
-                           红球 7-10 + 蓝球 2-5，须包含该组调整后的全部红蓝球再扩展）；
-                        2. 再综合特征报告与全部组结果，输出【唯一一组】最终可购买复式
+                        你是一名资深的双色球选号顾问，同时支持「调优」与「推荐」两种模式。
+                        你会收到一份历史一等奖特征报告；用户消息会明确本次是调优还是推荐。
+                        共同任务（两种模式输出 Schema 完全相同）：
+                        1. 产出若干组单式结果（adjustedTickets），并为【每一组】生成对应复式
+                           complexTicket（红球 7-10 + 蓝球 2-5，须包含该组单式全部红蓝球再扩展）；
+                        2. 综合特征报告与全部组结果，输出【唯一一组】最终可购买复式
                            finalComplexTicket（红球 7-10 + 蓝球 2-5）；
-                        3. 各组与最终复式的 totalBets = C(红球数,6)×蓝球数，须准确。
+                        3. 再输出恰好 2 组最终可购买单式 finalSingleTickets（每组 6 红 + 1 蓝）；
+                        4. 各组与最终复式的 totalBets = C(红球数,6)×蓝球数，须准确。
+                        模式差异：
+                        - 调优：有候选预测号码，逐组比对微调；保留 original* / replacements。
+                        - 推荐：无候选号码，按特征报告从零生成 N 组；original* / replacements 置空。
                         输出必须严格遵循用户给定的 JSON Schema，不得包含任何额外说明文字、
                         Markdown 代码块标记或推理过程，只输出纯 JSON。
                         """)
