@@ -14,9 +14,11 @@ import com.my.project.service.predict.IPredictHitRecordService;
 import com.my.project.service.config.LotteryModelConfig;
 import com.my.project.service.enums.PrizeLevelEnum;
 import com.my.project.service.predict.pojo.vo.PredictHitRecordVo;
+import com.my.project.service.selection.ISmartSelectService;
 import com.my.project.service.support.BatchQueryUtils;
 import com.my.project.service.support.FileUtils;
 import com.my.project.service.support.SsqPrizeCheckerUtils;
+import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
@@ -43,6 +45,7 @@ import java.util.stream.Collectors;
 @Service
 @Primary
 @Slf4j
+@AllArgsConstructor
 public class PredictHitRecordServiceImpl implements IPredictHitRecordService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(PredictHitRecordServiceImpl.class);
@@ -55,15 +58,9 @@ public class PredictHitRecordServiceImpl implements IPredictHitRecordService {
 
     private final LotteryModelConfig lotteryModelConfig;
 
+    private ISmartSelectService smartSelectService;
 
-    public PredictHitRecordServiceImpl(IPredictHitRecordRepository predictHitRecordRepository,
-        IHistoryRecordRepository historyRecordRepository, IPredictRecordRepository predictRecordRepository,
-        LotteryModelConfig lotteryModelConfig) {
-        this.predictHitRecordRepository = predictHitRecordRepository;
-        this.historyRecordRepository = historyRecordRepository;
-        this.predictRecordRepository = predictRecordRepository;
-        this.lotteryModelConfig = lotteryModelConfig;
-    }
+
 
     @Override
     public void archiveHits(LocalDate openDate) {
@@ -77,7 +74,7 @@ public class PredictHitRecordServiceImpl implements IPredictHitRecordService {
             CompletableFuture.runAsync(() -> processDatabasePredictions(integers, first.getSpecial(), openDate));
         CompletableFuture<Void> fileFuture =
             CompletableFuture.runAsync(() -> processFilePredictions(integers, first.getSpecial(), openDate));
-        CompletableFuture.allOf(dataBaseFuture, fileFuture).join();
+        CompletableFuture.allOf(dataBaseFuture, fileFuture).whenComplete((result, t) -> smartSelectService.refreshWeightConfig()).join();
     }
 
     @Override

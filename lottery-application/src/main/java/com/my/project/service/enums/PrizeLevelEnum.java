@@ -11,7 +11,7 @@ import java.util.List;
  **/
 public enum PrizeLevelEnum {
 
-    FIRST(true, 1), SECOND(true,2), THIRD(true,3), FOURTH(true,4), FIFTH(false,5), SIXTH(false, 6), NO_PRIZE(
+    FIRST(true, 1), SECOND(true,2), THIRD(true,3), FOURTH(true,4), FIFTH(true,5), SIXTH(true, 6), NO_PRIZE(
         false, 0);
 
     private boolean isHit;

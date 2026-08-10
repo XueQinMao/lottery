@@ -75,7 +75,7 @@ public class PredictCompleteEventListener {
             return false;
         }
         if (config == null || config.getProbabilityMin() == null || config.getProbabilityMax() == null) {
-            return false;
+            return true;
         }
         double min = config.getProbabilityMin();
         double max = config.getProbabilityMax();

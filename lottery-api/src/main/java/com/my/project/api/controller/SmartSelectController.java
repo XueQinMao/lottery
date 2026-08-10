@@ -62,10 +62,12 @@ public class SmartSelectController {
             WeightConfigBo config = smartSelectService.getWeightConfig();
 
             String message = String.format(
-                "权重刷新完成！当前配置: 数值特征=%.3f, 离散特征=%.3f, 模型分数=%.3f",
-                config.getNumFeatureWeight(),
-                config.getCatFeatureWeight(),
-                config.getModelScoreWeight());
+                "权重刷新完成！分层比例 high/mid/low=%.2f/%.2f/%.2f，概率区间 P5/P95=[%s, %s]",
+                config.getHighScoreRatio(),
+                config.getMidScoreRatio(),
+                config.getLowScoreRatio(),
+                config.getProbabilityMin(),
+                config.getProbabilityMax());
 
             return Result.success(message);
         } catch (Exception e) {

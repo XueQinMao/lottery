@@ -166,8 +166,8 @@ public class SmartSelectUtils {
                                                              WeightConfigBo config) {
         List<HistoryRecord> chrono = chronological(history);
         PredictedFeaturesBo pf = new PredictedFeaturesBo();
-        pf.setFeatureRange(buildFeatureRanges(chrono,
-            config.getRangeLowerQuantile(), config.getRangeUpperQuantile()));
+        // 特征区间分位使用固定默认值（WeightConfigBo 已不再承载该配置）
+        pf.setFeatureRange(buildFeatureRanges(chrono, 0.10, 0.90));
         pf.setBlueProbability(predictBlueProbability(chrono));
         // 兼容旧字段：用区间中点填充，避免空指针
         NumericFeaturesBo mid = new NumericFeaturesBo();
@@ -331,7 +331,7 @@ public class SmartSelectUtils {
                     .mapToDouble(f -> f.getNumeric().getZone3()).toArray();
             
             // ARIMA参数
-            ArimaOrder order = ArimaOrder.order(config.getArimaP(), config.getArimaD(), config.getArimaQ());
+            ArimaOrder order = ArimaOrder.order(1, 1, 1);
             
             // 使用ARIMA预测各个特征
             predicted.setBigCount((int) Math.round(predictWithArima(bigCountSeries, order)));
@@ -561,7 +561,7 @@ public class SmartSelectUtils {
 
         FeatureRangeBo range = predictedFeatures.getFeatureRange();
         if (range == null) {
-            range = buildFeatureRanges(chrono, config.getRangeLowerQuantile(), config.getRangeUpperQuantile());
+            range = buildFeatureRanges(chrono, 0.10, 0.90);
         }
         double rangeScore = calculateRangeConstraintScore(actualNumeric, redBalls, range);
 
@@ -578,15 +578,13 @@ public class SmartSelectUtils {
         double zoneBalanceScore = calculateZoneBalance(actualNumeric);
         double hotNumberScore = calculateHotNumberBonus(redBalls, chrono);
 
-        // 权重：优先用新字段；若 analyzer 只写了旧字段则回退融合
-        double modelW = config.getModelScoreWeight();
-        double rangeW = config.getRangeConstraintWeight() > 0
-            ? config.getRangeConstraintWeight()
-            : (config.getNumFeatureWeight() + config.getCatFeatureWeight()) * 0.5;
-        double blueHotW = config.getBlueHotWeight();
-        double blueGapW = config.getBlueGapWeight();
-        double zoneW = config.getZoneBalanceBonus();
-        double hotW = config.getHotNumberBonus();
+        // 打分权重使用固定默认值（WeightConfigBo 已精简，不再承载本地打分权重）
+        double modelW = 0.45;
+        double rangeW = 0.30;
+        double blueHotW = 0.10;
+        double blueGapW = 0.05;
+        double zoneW = 0.05;
+        double hotW = 0.05;
 
         double weightSum = modelW + rangeW + blueHotW + blueGapW + zoneW + hotW;
         if (weightSum <= 0) {
