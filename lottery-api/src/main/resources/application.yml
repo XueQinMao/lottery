@@ -20,14 +20,22 @@ spring:
       base-url: https://api.deepseek.com
       chat:
         options:
+          # 调优 / 推荐：思考模型deepseek-v4-pro  deepseek-chat
           model: deepseek-v4-pro
           temperature: 0.9
+          #max-tokens: 16384
 mybatis-plus:
   configuration:
     #log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
     map-underscore-to-camel-case: true
   mapper-locations: classpath*:mapper/**/*.xml
 lottery:
+  llm:
+    analysis:
+      # java：本地统计直方图（默认）；llm：仍走 DeepSeek
+      engine: java
+      model: deepseek-chat
+      temperature: 0.9
   model:
     path: E:\home\python\
     csv:

@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
+import SiteNav from "@/components/SiteNav";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "双色球遗漏趋势分析",
-  description: "基于 LotteryTrendUtils 的遗漏指数与均线趋势图",
+  title: "双色球数据分析",
+  description: "遗漏趋势与开奖形态统计",
 };
 
 export default function RootLayout({
@@ -13,7 +15,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body>{children}</body>
+      <body>
+        <Suspense fallback={null}>
+          <SiteNav />
+        </Suspense>
+        {children}
+      </body>
     </html>
   );
 }

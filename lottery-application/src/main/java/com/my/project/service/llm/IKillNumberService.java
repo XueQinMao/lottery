@@ -23,4 +23,13 @@ public interface IKillNumberService {
      * @return 杀号结果，含硬杀 / 软杀两级清单
      */
     KillNumberResultBo calculate(List<DrawRecord> records, DrawRecord defaultKillNumbers);
+
+    /**
+     * 指定计算杀球数量的， 后面次方法要废弃
+     * @param records
+     * @param defaultKillNumbers
+     * @param killNumber
+     * @return
+     */
+    KillNumberResultBo calculate(List<DrawRecord> records, DrawRecord defaultKillNumbers, Integer killNumber);
 }

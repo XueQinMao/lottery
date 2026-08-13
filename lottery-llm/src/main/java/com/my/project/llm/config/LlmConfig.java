@@ -2,6 +2,8 @@ package com.my.project.llm.config;
 
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.deepseek.DeepSeekChatOptions;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -9,8 +11,9 @@ import org.springframework.context.annotation.Configuration;
  * LlmConfig
  *
  * <p>基于 Spring AI {@code DeepSeekChatModel}（直连 api.deepseek.com）构建 ChatClient。
- * 配置项：{@code spring.ai.deepseek.api-key}、{@code spring.ai.deepseek.chat.options.model}
- * （如 deepseek-v4-pro / deepseek-v4-flash / deepseek-chat）。
+ * 调优/推荐沿用 {@code spring.ai.deepseek.chat.options.model}（思考模型）；
+ * 特征分析单独覆盖为 {@code lottery.llm.analysis.model}（非思考模型），
+ * 避免 reasoning 把输出额度吃光导致 JSON 截断。
  *
  * <p>提供两个 ChatClient：
  * <ul>
@@ -19,14 +22,21 @@ import org.springframework.context.annotation.Configuration;
  * </ul>
  *
  * @author 刘强
- * @version 2026/08/10 10:42
+ * @version 2026/08/13
  **/
 @Configuration
 public class LlmConfig {
 
     @Bean
-    public ChatClient lotteryChatClient(ChatModel chatModel) {
+    public ChatClient lotteryChatClient(
+            ChatModel chatModel,
+            @Value("${lottery.llm.analysis.model:deepseek-chat}") String analysisModel,
+            @Value("${lottery.llm.analysis.temperature:0.9}") Double analysisTemperature) {
         return ChatClient.builder(chatModel)
+                .defaultOptions(DeepSeekChatOptions.builder()
+                        .model(analysisModel)
+                        .temperature(analysisTemperature)
+                        .build())
                 .defaultSystem("""
                         你是一名资深的双色球号码特征分析师。
                         你擅长基于历史一等奖号码样本，从红球的奇偶比、大小比、质合比、012路比、

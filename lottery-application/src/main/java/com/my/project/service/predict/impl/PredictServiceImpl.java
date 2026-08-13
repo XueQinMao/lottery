@@ -84,6 +84,13 @@ public class PredictServiceImpl implements IPredictService {
             int diff = sortedList.getLast()- sortedList.getFirst();
             if(diff<16 || diff>28){
                 log.warn("生成的号码组 {} 差值不满足特征，跳过", JSON.toJSONString(combination));
+                return;
+            }
+            //奇偶数数量赞比
+            long oddNumber = combination.getRedBalls().stream().filter(i -> i % 2 > 0).count();
+            if(oddNumber>5){
+                log.warn("生成的号码组 {} 奇数数量>5不满足特征，跳过", JSON.toJSONString(combination));
+                return;
             }
             Supplier<String> supplyAsyncSupplier = () -> {
                 // 与 Python predict.py 单注入口统一：type=predict + second_fusion_model

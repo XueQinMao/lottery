@@ -13,15 +13,15 @@ import org.springframework.stereotype.Service;
 /**
  * LotteryAnalysisServiceImpl
  *
- * <p>调用 Spring AI Alibaba ChatClient（DashScope 后端，模型为 deepseek-v3 / deepseek-r1）
- * 对最近 100 组一等奖号码进行 14 维度特征分析。
- *
- * <p>采用结构化输出（Structured Output）方式，将大模型返回的 JSON 直接反序列化为
- * {@link LotteryAnalysisRespBo}，避免手工解析。
- *
+ * <p>特征分析直方图可通过 {@code lottery.llm.analysis.engine} 切换：
+ * <ul>
+ *     <li>{@code java}（默认）：{@lin} 本地统计</li>
+ *     <li>{@code llm}：调用 DeepSeek 生成 JSON</li>
+ * </ul>
+ * 杀号 / 冷热温 / 三区预测 / 趋势均线仍由外层 Java 服务计算后挂载。
  *
  * @author 刘强
- * @version 2026/07/21 20:30
+ * @version 2026/08/13
  **/
 @Slf4j
 @Service
@@ -29,7 +29,8 @@ public class LotteryAnalysisServiceImpl implements ILotteryAnalysisService {
 
     private final ChatClient lotteryChatClient;
 
-    public LotteryAnalysisServiceImpl(@Qualifier("lotteryChatClient") ChatClient lotteryChatClient) {
+    public LotteryAnalysisServiceImpl(
+            @Qualifier("lotteryChatClient") ChatClient lotteryChatClient) {
         this.lotteryChatClient = lotteryChatClient;
     }
 
@@ -39,17 +40,14 @@ public class LotteryAnalysisServiceImpl implements ILotteryAnalysisService {
             throw new IllegalArgumentException("分析样本不能为空");
         }
         log.info("开始调用 DeepSeek 进行号码特征分析，样本数: {}", reqBo.getRecords().size());
-
         String recordsJson = JSON.toJSONString(reqBo.getRecords());
-
         LotteryAnalysisRespBo result = lotteryChatClient.prompt()
-                .user(u -> u.text(LotteryAnalysisPrompt.USER_PROMPT)
-                        .param("records", recordsJson)
-                        .param("format", FORMAT_HINT))
-                .call()
-                .entity(LotteryAnalysisRespBo.class);
-
-        log.info("DeepSeek 号码特征分析完成:{}", JSON.toJSONString(result));
+            .user(u -> u.text(LotteryAnalysisPrompt.USER_PROMPT)
+                .param("records", recordsJson)
+                .param("format", FORMAT_HINT))
+            .call()
+            .entity(LotteryAnalysisRespBo.class);
+        log.info("DeepSeek 号码特征分析完成");
         return result;
     }
 
@@ -113,13 +111,10 @@ public class LotteryAnalysisServiceImpl implements ILotteryAnalysisService {
                 },
                 "anyN": {
                   "any1": [ { "balls": "号码", "count": int, "frequency": double } ],
-                  "any2": [ { "balls": "号码1,号码2", "count": int, "frequency": double } ],
-                  "any3": [ { "balls": "号码1,号码2,号码3", "count": int, "frequency": double } ],
-                  "any4": [ { "balls": "号码1,号码2,号码3,号码4", "count": int, "frequency": double } ],
-                  "any5": [ { "balls": "号码1,号码2,号码3,号码4,号码5", "count": int, "frequency": double } ]
+                  "any2": [ { "balls": "号码1,号码2", "count": int, "frequency": double } ]
                 }
               },
-              "conclusion": "综合结论与选号建议(300字内)"
+              "conclusion": "综合结论与选号建议(200字内)"
             }
             """;
 }

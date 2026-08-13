@@ -9,7 +9,6 @@ import com.my.project.service.support.LotteryTrendUtils;
 import com.my.project.service.support.LotteryTrendUtils.TrendAnalysisResult;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.collections4.ListUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -85,8 +84,8 @@ public class KillNumberServiceImpl implements IKillNumberService {
         // 趋势均线直接杀号：不参与加权融合，达标直接进硬杀清单
         Set<Integer> alreadyRed = ballsOf(hardKillRed);
         Set<Integer> alreadyBlue = ballsOf(hardKillBlue);
-        List<KillItemBo> trendKillRed = calcTrendKills(records, true, alreadyRed);
-        List<KillItemBo> trendKillBlue = calcTrendKills(records, false, alreadyBlue);
+        List<KillItemBo> trendKillRed = calcTrendKills(records, true, alreadyRed, killNumberConfig.getTrend());
+        List<KillItemBo> trendKillBlue = calcTrendKills(records, false, alreadyBlue, killNumberConfig.getTrend());
         hardKillRed.addAll(trendKillRed);
         hardKillBlue.addAll(trendKillBlue);
 
@@ -97,16 +96,59 @@ public class KillNumberServiceImpl implements IKillNumberService {
             .map(redball -> KillItemBo.builder().ball(redball).score(1.0).reason("上期开出").build())
             .forEach(hardKillRed::add);
 
-        KillNumberResultBo result = KillNumberResultBo.builder()
-            .hardKillRed(hardKillRed)
-            .hardKillBlue(hardKillBlue)
-            .basis(buildBasis(sampleSize))
-            .build();
+        KillNumberResultBo result = KillNumberResultBo.builder().hardKillRed(hardKillRed).hardKillBlue(hardKillBlue)
+            .basis(buildBasis(sampleSize)).build();
 
-        log.info("杀号计算完成: 硬杀红={}, 硬杀蓝={}",
-            ballsOf(result.getHardKillRed()), ballsOf(result.getHardKillBlue()));
+        log.info("杀号计算完成: 硬杀红={}, 硬杀蓝={}", ballsOf(result.getHardKillRed()), ballsOf(result.getHardKillBlue()));
         return result;
     }
+
+    @Override
+    public KillNumberResultBo calculate(List<DrawRecord> records, DrawRecord defaultKillNumbers, Integer killNumber) {
+        if (records == null || records.isEmpty()) {
+            log.warn("杀号计算样本为空，跳过");
+            return emptyResult();
+        }
+        List<DrawRecord> drawRecords = records.subList(0, Math.min(30, records.size()));
+        // 遗漏计算要求期号升序（最旧→最新），兼容上游降序传入
+        List<DrawRecord> chronological = toAscending(drawRecords);
+
+        Map<Integer, Integer> redOmission = calcRedOmission(chronological);
+        Map<Integer, Integer> blueOmission = calcBlueOmission(chronological);
+        Map<Integer, Double> redScores = calculateRedScores(chronological, redOmission);
+        Map<Integer, Double> blueScores = calculateBlueScores(chronological, blueOmission);
+
+        int sampleSize = chronological.size();
+        List<KillItemBo> hardKillRed = pickTop(redScores, redOmission, sampleSize,
+            killNumberConfig.getMaxHardKillRed(), killNumberConfig.getHardThreshold(), Set.of(), true);
+        List<KillItemBo> hardKillBlue = pickTop(blueScores, blueOmission, sampleSize,
+            killNumberConfig.getMaxHardKillBlue(), killNumberConfig.getHardThreshold(), Set.of(), false);
+
+        // 趋势均线直接杀号：不参与加权融合，达标直接进硬杀清单
+        Set<Integer> alreadyRed = ballsOf(hardKillRed);
+        Set<Integer> alreadyBlue = ballsOf(hardKillBlue);
+        KillNumberConfig.TrendThreshold trend = killNumberConfig.getTrend();
+        trend.setMaxTrendKillBlue(trend.getMaxTrendKillBlue()+killNumber);
+        trend.setMaxTrendKillRed(trend.getMaxTrendKillRed()+killNumber);
+        List<KillItemBo> trendKillRed = calcTrendKills(records, true, alreadyRed, trend);
+        List<KillItemBo> trendKillBlue = calcTrendKills(records, false, alreadyBlue, trend);
+        hardKillRed.addAll(trendKillRed);
+        hardKillBlue.addAll(trendKillBlue);
+
+        //默认吧最近一期的都杀掉
+        hardKillBlue.add(
+            KillItemBo.builder().ball(defaultKillNumbers.getBlueBall()).score(1.0).reason("上期开出").build());
+        defaultKillNumbers.getRedBalls().stream()
+            .map(redball -> KillItemBo.builder().ball(redball).score(1.0).reason("上期开出").build())
+            .forEach(hardKillRed::add);
+
+        KillNumberResultBo result = KillNumberResultBo.builder().hardKillRed(hardKillRed).hardKillBlue(hardKillBlue)
+            .basis(buildBasis(sampleSize)).build();
+
+        log.info("杀号计算完成: 硬杀红={}, 硬杀蓝={}", ballsOf(result.getHardKillRed()), ballsOf(result.getHardKillBlue()));
+        return result;
+    }
+
 
     // ==================== 红球得分 ====================
 
@@ -331,7 +373,7 @@ public class KillNumberServiceImpl implements IKillNumberService {
      * @param exclude  已在硬杀清单中的号码，跳过避免重复
      * @return 趋势杀号清单
      */
-    private List<KillItemBo> calcTrendKills(List<DrawRecord> records, boolean isRed, Set<Integer> exclude) {
+    private List<KillItemBo> calcTrendKills(List<DrawRecord> records, boolean isRed, Set<Integer> exclude, KillNumberConfig.TrendThreshold trendCfg) {
         List<Set<Integer>> drawSets = new ArrayList<>();
         for (DrawRecord r : records) {
             Set<Integer> set = new HashSet<>();
@@ -348,7 +390,7 @@ public class KillNumberServiceImpl implements IKillNumberService {
         }
         int min = isRed ? RED_MIN : BLUE_MIN;
         int max = isRed ? RED_MAX : BLUE_MAX;
-        KillNumberConfig.TrendThreshold trendCfg = killNumberConfig.getTrend();
+//        KillNumberConfig.TrendThreshold trendCfg = killNumberConfig.getTrend();
         double killThreshold = trendCfg.getKillThreshold();
         int topN = isRed ? trendCfg.getMaxTrendKillRed() : trendCfg.getMaxTrendKillBlue();
 

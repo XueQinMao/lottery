@@ -8,10 +8,10 @@ import java.util.List;
 /**
  * ILotteryAnalysisService
  *
- * <p>大模型号码特征分析服务。传入最近若干组一等奖号码，输出多维度统计分析结果。
+ * <p>号码特征分析服务。直方图可由 Java 本地统计或 LLM 生成（见 {@code lottery.llm.analysis.engine}）。
  *
  * @author 刘强
- * @version 2026/07/21 20:28
+ * @version 2026/08/13
  **/
 public interface ILotteryAnalysisService {
 

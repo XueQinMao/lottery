@@ -14,6 +14,7 @@ import com.my.project.service.history.IHistoryRecordService;
 import com.my.project.service.history.pojo.dto.HistoryRecordDto;
 import com.my.project.service.history.pojo.client.SsqWebsiteClientDto;
 import com.my.project.service.history.pojo.client.WebsiteDrawItemDto;
+import com.my.project.service.history.pojo.vo.FeatureStatsVo;
 import com.my.project.service.history.pojo.vo.TrendAnalysisVo;
 import com.my.project.service.support.LotteryTrendUtils;
 import com.my.project.service.support.LotteryTrendUtils.TrendAnalysisResult;
@@ -50,6 +51,9 @@ public class HistoryRecordServiceImpl implements IHistoryRecordService {
 
     private static final String URL_FORMAT =
         "https://www.cwl.gov.cn/cwl_admin/front/cwlkj/search/kjxx/findDrawNotice?name=%s&pageNo=%d&pageSize=10&systemType=PC";
+
+    /** 红球质数（1 视为合数） */
+    private static final Set<Integer> PRIMES = Set.of(2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31);
 
     private final IHistoryRecordRepository historyRecordRepository;
 
@@ -183,5 +187,68 @@ public class HistoryRecordServiceImpl implements IHistoryRecordService {
                 .totalPeriods(stats.getTotalPeriods())
                 .build())
             .build();
+    }
+
+    @Override
+    public FeatureStatsVo analyzeFeatureStats(int sampleSize) {
+        int size = Math.max(sampleSize, 1);
+        List<HistoryRecord> latest = getLatestRecords(size);
+        if (CollectionUtil.isEmpty(latest)) {
+            throw new IllegalStateException("无可用的历史开奖记录");
+        }
+        List<HistoryRecord> chronological = new ArrayList<>(latest);
+        Collections.reverse(chronological);
+
+        List<String> periods = new ArrayList<>(chronological.size());
+        List<Integer> sums = new ArrayList<>(chronological.size());
+        List<Integer> spans = new ArrayList<>(chronological.size());
+        List<Integer> primeCounts = new ArrayList<>(chronological.size());
+        List<String> primeRatios = new ArrayList<>(chronological.size());
+        List<Integer> redOddCounts = new ArrayList<>(chronological.size());
+        List<String> redOddEvenRatios = new ArrayList<>(chronological.size());
+        List<Integer> blueOddFlags = new ArrayList<>(chronological.size());
+        List<String> blueOddEvenLabels = new ArrayList<>(chronological.size());
+
+        for (HistoryRecord r : chronological) {
+            List<Integer> reds = Arrays.asList(
+                r.getNum1(), r.getNum2(), r.getNum3(), r.getNum4(), r.getNum5(), r.getNum6());
+            int sum = reds.stream().mapToInt(Integer::intValue).sum();
+            int span = Collections.max(reds) - Collections.min(reds);
+            int primeCount = (int) reds.stream().filter(PRIMES::contains).count();
+            int oddCount = (int) reds.stream().filter(n -> n % 2 == 1).count();
+            boolean blueOdd = r.getSpecial() != null && r.getSpecial() % 2 == 1;
+
+            periods.add(r.getPeriod());
+            sums.add(sum);
+            spans.add(span);
+            primeCounts.add(primeCount);
+            primeRatios.add(primeCount + ":" + (6 - primeCount));
+            redOddCounts.add(oddCount);
+            redOddEvenRatios.add(oddCount + ":" + (6 - oddCount));
+            blueOddFlags.add(blueOdd ? 1 : 0);
+            blueOddEvenLabels.add(blueOdd ? "奇" : "偶");
+        }
+
+        return FeatureStatsVo.builder()
+            .periods(periods)
+            .sumValues(sums)
+            .sumAvg(avg(sums))
+            .spanValues(spans)
+            .spanAvg(avg(spans))
+            .primeCounts(primeCounts)
+            .primeRatios(primeRatios)
+            .primeAvg(avg(primeCounts))
+            .redOddCounts(redOddCounts)
+            .redOddEvenRatios(redOddEvenRatios)
+            .redOddAvg(avg(redOddCounts))
+            .blueOddFlags(blueOddFlags)
+            .blueOddEvenLabels(blueOddEvenLabels)
+            .blueOddAvg(avg(blueOddFlags))
+            .build();
+    }
+
+    private static double avg(List<Integer> values) {
+        double mean = values.stream().mapToInt(Integer::intValue).average().orElse(0);
+        return Math.round(mean * 100.0) / 100.0;
     }
 }

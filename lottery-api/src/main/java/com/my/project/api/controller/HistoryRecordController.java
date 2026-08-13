@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.my.project.api.pojo.resp.Result;
 import com.my.project.service.history.IHistoryRecordService;
 import com.my.project.service.history.pojo.dto.HistoryRecordDto;
+import com.my.project.service.history.pojo.vo.FeatureStatsVo;
 import com.my.project.service.history.pojo.vo.TrendAnalysisVo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -58,6 +59,21 @@ public class HistoryRecordController {
         @RequestParam(required = false, defaultValue = "100") int sampleSize) {
         try {
             return Result.success(historyRecordService.analyzeTrend(ballType, ball, sampleSize));
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    /**
+     * 开奖形态统计：红球和值、差值（跨度）、质合比，以及红/蓝球奇偶比。
+     *
+     * @param sampleSize 最近期数，默认 100
+     */
+    @GetMapping("/feature-stats")
+    public Result<FeatureStatsVo> analyzeFeatureStats(
+        @RequestParam(required = false, defaultValue = "100") int sampleSize) {
+        try {
+            return Result.success(historyRecordService.analyzeFeatureStats(sampleSize));
         } catch (Exception e) {
             return Result.error(e.getMessage());
         }
