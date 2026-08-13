@@ -3,6 +3,7 @@ package com.my.project.service.history;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.my.project.persistence.entity.HistoryRecord;
 import com.my.project.service.history.pojo.dto.HistoryRecordDto;
+import com.my.project.service.history.pojo.vo.TrendAnalysisVo;
 
 import java.util.List;
 
@@ -26,4 +27,14 @@ public interface IHistoryRecordService{
    * @return 历史记录列表
    */
   List<HistoryRecord> getLatestRecords(int count);
+
+  /**
+   * 分析指定号码的遗漏/趋势指数（基于 {@code LotteryTrendUtils}）。
+   *
+   * @param ballType   red / blue
+   * @param ball       号码（红 1-33，蓝 1-16）
+   * @param sampleSize 最近期数
+   * @return 趋势分析结果
+   */
+  TrendAnalysisVo analyzeTrend(String ballType, int ball, int sampleSize);
 }

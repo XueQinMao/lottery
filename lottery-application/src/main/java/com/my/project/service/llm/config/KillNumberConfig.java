@@ -119,6 +119,13 @@ public class KillNumberConfig {
     private ReboundThreshold rebound = new ReboundThreshold();
 
     /**
+     * 趋势均线维度阈值：基于反向指数的 MA5/MA10/MA20 均线排列与交叉判断号码冷热趋势。
+     * <p>指数 = 平均遗漏 / max(遗漏值, 1)，遗漏越大指数越小。
+     * 空头排列（MA5 < MA10 < MA20）意味着指数持续下跌 → 遗漏持续增大 → 号码趋冷 → 杀号。
+     */
+    private TrendThreshold trend = new TrendThreshold();
+
+    /**
      * 冷热频次维度阈值
      */
     @Data
@@ -132,7 +139,7 @@ public class KillNumberConfig {
          * 超热：近 N 期出现次数 ≥ 此值 → 回冷剔除置信度。
          * <p>30 期下 ≥10 次约 2 倍均值，判定超热。
          */
-        private int hotCount = 10;
+        private int hotCount = 20;
         /**
          * 极冷对应得分
          */
@@ -226,4 +233,68 @@ public class KillNumberConfig {
      * <p>30 期样本下默认 0.85（即遗漏 ≥ 26 期的号码绝不硬杀）。
      */
     private double extremeOmissionWhitelistRatio = 0.85;
+
+    /**
+     * 趋势均线维度阈值
+     * <p>基于反向指数（平均遗漏 / max(遗漏, 1)）的 MA5/MA10/MA20 均线排列判断。
+     * <p>指数下跌 = 遗漏增大 = 号码趋冷 → 杀号。
+     */
+    @Data
+    public static class TrendThreshold {
+        /**
+         * 空头排列得分：MA5 < MA10 < MA20（指数均线空头排列，将继续下跌）。
+         * <p>遗漏持续增大，号码趋冷，给高剔除置信度。
+         */
+        private double bearishScore = 0.8;
+
+        /**
+         * 大幅上涨后空头排列的额外加分。
+         * <p>经历过一段大幅上涨（指数从高到低大幅回落）后的空头排列，意味着将继续下跌，
+         * 额外加分强化杀号信号。
+         */
+        private double postRiseBonus = 0.15;
+
+        /**
+         * 短期均线下穿长期均线得分。
+         * <p>MA5 下穿 MA20（或 MA10），且长期均线走势疲软（MA20 斜率 ≤ 0），给剔除置信度。
+         */
+        private double crossScore = 0.6;
+
+        /**
+         * 均线夹角阈值：|MA5 - MA20| / MA20 超过此值时，两均线夹角足够大，强化杀号信号。
+         * <p>夹角越大越需要杀号。
+         */
+        private double angleThreshold = 0.15;
+
+        /**
+         * 近期上涨回看期数，用于判断"大幅上涨后"。
+         */
+        private int riseLookback = 10;
+
+        /**
+         * 上涨幅度阈值：近期峰值 / 当前值 > 此值才算"大幅上涨"。
+         */
+        private double riseRatio = 1.5;
+
+        /**
+         * 长期均线斜率回看期数，用于判断"长期均线走势疲软"。
+         */
+        private int maSlopeLookback = 5;
+
+        /**
+         * 趋势直接杀号阈值：趋势得分 ≥ 此值的号码直接进入硬杀清单，不参与加权融合。
+         * <p>默认 0.6，即空头排列(0.8)或短穿长(0.6)触发时直接杀号。
+         */
+        private double killThreshold = 0.6;
+
+        /**
+         * 趋势杀号红球上限：按趋势分排序后最多取 Top-N。
+         */
+        private int maxTrendKillRed = 8;
+
+        /**
+         * 趋势杀号蓝球上限：按趋势分排序后最多取 Top-N。
+         */
+        private int maxTrendKillBlue = 8;
+    }
 }

@@ -14,19 +14,21 @@ import com.my.project.service.history.IHistoryRecordService;
 import com.my.project.service.history.pojo.dto.HistoryRecordDto;
 import com.my.project.service.history.pojo.client.SsqWebsiteClientDto;
 import com.my.project.service.history.pojo.client.WebsiteDrawItemDto;
+import com.my.project.service.history.pojo.vo.TrendAnalysisVo;
+import com.my.project.service.support.LotteryTrendUtils;
+import com.my.project.service.support.LotteryTrendUtils.TrendAnalysisResult;
+import com.my.project.service.support.LotteryTrendUtils.TrendStats;
 import org.apache.commons.lang3.math.NumberUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.Collections;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.regex.Pattern;
@@ -127,5 +129,59 @@ public class HistoryRecordServiceImpl implements IHistoryRecordService {
     public List<HistoryRecord> getLatestRecords(int count) {
         return historyRecordRepository.lambdaQuery().orderByDesc(HistoryRecord::getOpenDate).last("limit " + count)
             .list();
+    }
+
+    @Override
+    public TrendAnalysisVo analyzeTrend(String ballType, int ball, int sampleSize) {
+        String type = StringUtils.hasText(ballType) ? ballType.trim().toLowerCase() : "red";
+        if (!"red".equals(type) && !"blue".equals(type)) {
+            throw new IllegalArgumentException("ballType 仅支持 red / blue");
+        }
+        int maxBall = "red".equals(type) ? 33 : 16;
+        if (ball < 1 || ball > maxBall) {
+            throw new IllegalArgumentException("号码超出范围: " + ball + "（" + type + " 应为 1-" + maxBall + "）");
+        }
+        int size = Math.max(sampleSize, 1);
+        List<HistoryRecord> latest = getLatestRecords(size);
+        if (CollectionUtil.isEmpty(latest)) {
+            throw new IllegalStateException("无可用的历史开奖记录");
+        }
+        // getLatestRecords 为降序（最新→最旧），趋势计算需要升序（最旧→最新）
+        List<HistoryRecord> chronological = new ArrayList<>(latest);
+        Collections.reverse(chronological);
+
+        List<String> periods = new ArrayList<>(chronological.size());
+        List<Set<Integer>> draws = new ArrayList<>(chronological.size());
+        for (HistoryRecord r : chronological) {
+            periods.add(r.getPeriod());
+            if ("red".equals(type)) {
+                draws.add(new HashSet<>(Arrays.asList(r.getNum1(), r.getNum2(), r.getNum3(), r.getNum4(), r.getNum5(),
+                    r.getNum6())));
+            } else {
+                draws.add(Set.of(r.getSpecial()));
+            }
+        }
+
+        TrendAnalysisResult result = LotteryTrendUtils.analyze(draws, ball);
+        TrendStats stats = result.getStats();
+        return TrendAnalysisVo.builder()
+            .ballType(type)
+            .ball(ball)
+            .periods(periods)
+            .omissions(result.getOmissions())
+            .indexValues(result.getIndexValues())
+            .ma5(result.getMa5())
+            .ma10(result.getMa10())
+            .ma20(result.getMa20())
+            .arrangement(result.getArrangement())
+            .stats(TrendAnalysisVo.Stats.builder()
+                .maxOmission(stats.getMaxOmission())
+                .avgOmission(stats.getAvgOmission())
+                .currentOmission(stats.getCurrentOmission())
+                .indexMean(stats.getIndexMean())
+                .hitCount(stats.getHitCount())
+                .totalPeriods(stats.getTotalPeriods())
+                .build())
+            .build();
     }
 }

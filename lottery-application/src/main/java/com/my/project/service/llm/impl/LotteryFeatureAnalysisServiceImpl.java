@@ -20,6 +20,8 @@ import com.my.project.service.llm.pojo.dto.LLmAdjustDto;
 import com.my.project.service.predict.pojo.vo.PredictCacheVo;
 import com.my.project.service.predict.IPredictCacheService;
 import com.my.project.service.selection.ISmartSelectService;
+import com.my.project.service.support.LotteryTrendUtils;
+import com.my.project.service.support.LotteryTrendUtils.TrendAnalysisResult;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
@@ -64,7 +66,7 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
     private final IColdHotAnalysisService coldHotAnalysisService;
     private final IThreeZoneRatioPredictService threeZoneRatioPredictService;
 
-    private static final String CACHE_KEY_PREFIX = "LotteryFeatureAnalysisServiceImpl.analyzeLatest";
+    private static final String CACHE_KEY_PREFIX = "feature.analysis.cache";
 
     @Override
     public LotteryAnalysisRespBo analyzeLatest(int sampleSize) {
@@ -74,7 +76,8 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
             throw new IllegalStateException("无可用的历史开奖记录用于分析");
         }
         String period = latest.getFirst().getPeriod();
-        String cacheKey = CACHE_KEY_PREFIX + period + sampleSize;
+//        String cacheKey = CACHE_KEY_PREFIX + period + sampleSize;
+        String cacheKey = CACHE_KEY_PREFIX + period + UUID.randomUUID().toString();
         return multiLevelCache.get(cacheKey, k -> doAnalyze(count));
     }
 
@@ -100,12 +103,66 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
                 : null);
         result.setColdHotAnalysis(coldHotAnalysisService.calculate(reqBo.getRecords()));
         result.setPredictedThreeZoneRatio(threeZoneRatioPredictService.predict(reqBo.getRecords()));
+        result.setTrendAnalysis(calcTrendAnalysis(drawRecords));
         return result;
+    }
+
+    /**
+     * 计算红球 1-33 和蓝球 1-16 的趋势均线排列。
+     * <p>基于反向指数的 MA5/MA10/MA20 均线：
+     * <ul>
+     *     <li>多头排列（MA5 > MA10 > MA20）→ 指数上升 → 号码趋热 → rising</li>
+     *     <li>空头排列（MA5 < MA10 < MA20）→ 指数下降 → 号码趋冷 → falling</li>
+     * </ul>
+     */
+    private LotteryAnalysisRespBo.TrendAnalysisBo calcTrendAnalysis(
+        List<LotteryAnalysisReqBo.DrawRecord> records) {
+        // 红球：每期 6 个红球转为 Set
+        List<Set<Integer>> redDraws = new ArrayList<>();
+        List<Set<Integer>> blueDraws = new ArrayList<>();
+        for (var r : records) {
+            redDraws.add(r.getRedBalls() != null ? new HashSet<>(r.getRedBalls()) : new HashSet<>());
+            blueDraws.add(r.getBlueBall() != null ? Set.of(r.getBlueBall()) : new HashSet<>());
+        }
+
+        List<Integer> risingRed = new ArrayList<>();
+        List<Integer> fallingRed = new ArrayList<>();
+        for (int b = 1; b <= 33; b++) {
+            TrendAnalysisResult result = LotteryTrendUtils.analyze(redDraws, b);
+            int arr = result.getArrangement();
+            if (arr == 1) {
+                risingRed.add(b);
+            } else if (arr == -1) {
+                fallingRed.add(b);
+            }
+        }
+
+        List<Integer> risingBlue = new ArrayList<>();
+        List<Integer> fallingBlue = new ArrayList<>();
+        for (int b = 1; b <= 16; b++) {
+            TrendAnalysisResult result = LotteryTrendUtils.analyze(blueDraws, b);
+            int arr = result.getArrangement();
+            if (arr == 1) {
+                risingBlue.add(b);
+            } else if (arr == -1) {
+                fallingBlue.add(b);
+            }
+        }
+
+        log.info("趋势分析: 红球上升={}, 下降={}, 蓝球上升={}, 下降={}",
+            risingRed, fallingRed, risingBlue, fallingBlue);
+
+        return LotteryAnalysisRespBo.TrendAnalysisBo.builder()
+            .risingRedBalls(risingRed)
+            .fallingRedBalls(fallingRed)
+            .risingBlueBalls(risingBlue)
+            .fallingBlueBalls(fallingBlue)
+            .build();
     }
 
     @Override
     public LotteryAdjustRespBo adjust(LLmAdjustDto dto) {
-        var respBo = analyzeLatest(30);
+        var respBo = analyzeLatest(100);
         var tickets = CollectionUtils.emptyIfNull(dto.getDrawRecords()).stream().map(
                 d -> LotteryAdjustReqBo.PredictTicket.builder().redBalls(d.getRedballs()).blueBall(d.getBlueball()).build())
             .toList();
@@ -139,7 +196,7 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
             return LotteryAdjustReqBo.PredictTicket.builder().redBalls(redBalls).blueBall(Integer.valueOf(split[2]))
                 .build();
         }).toList();
-        var respBo = analyzeLatest(30);
+        var respBo = analyzeLatest(100);
 
         var adjustReqBo =
             LotteryAdjustReqBo.builder().analysisReportJson(JSONObject.toJSONString(respBo)).tickets(tickets).build();

@@ -30,6 +30,6 @@ public class Result<T> {
     }
 
     public static <T> Result<T> error(String message) {
-        return new Result<>(500, "系统内部错误", null);
+        return new Result<>(500, message != null ? message : "系统内部错误", null);
     }
 }

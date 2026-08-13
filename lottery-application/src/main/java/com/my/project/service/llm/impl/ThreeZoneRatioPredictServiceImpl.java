@@ -56,9 +56,9 @@ public class ThreeZoneRatioPredictServiceImpl implements IThreeZoneRatioPredictS
             log.warn("三区比预测样本为空，跳过");
             return emptyResult();
         }
-
+        List<DrawRecord> drawRecords = records.subList(0, Math.min(30, records.size()));
         // 统一为期号升序（最旧→最新），兼容上游降序传入
-        List<DrawRecord> chronological = toAscending(records);
+        List<DrawRecord> chronological = toAscending(drawRecords);
 
         // 1. 将每期红球转为三区比字符串（按期号升序）
         List<String> ratioSequence = chronological.stream()

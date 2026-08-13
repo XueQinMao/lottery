@@ -117,9 +117,9 @@ public class ColdHotAnalysisServiceImpl implements IColdHotAnalysisService {
             log.warn("冷热温分析样本为空，跳过");
             return emptyResult();
         }
-
+        List<DrawRecord> drawRecords = records.subList(0, Math.min(30, records.size()));
         // 遗漏计算要求期号升序（最旧→最新），兼容上游降序传入
-        List<DrawRecord> chronological = toAscending(records);
+        List<DrawRecord> chronological = toAscending(drawRecords);
         int sampleSize = chronological.size();
 
         Map<Integer, Integer> redFreq = countRedFrequency(chronological);

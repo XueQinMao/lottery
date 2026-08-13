@@ -100,6 +100,15 @@ public class LotteryAnalysisRespBo {
      */
     private ThreeZoneRatioPredictBo predictedThreeZoneRatio;
 
+    /**
+     * 趋势均线分析结果（可选）。
+     * <p>由 {@code LotteryTrendUtils} 基于反向指数的 MA5/MA10/MA20 均线排列计算，
+     * 将红球/蓝球分为「趋势上升」（指数多头排列，号码趋热）和「趋势下降」
+     * （指数空头排列，号码趋冷）两类。随 {@code analysisReportJson} 序列化后
+     * 透传给调优阶段，供 LLM 补号时优先选择趋势上升的号码。
+     */
+    private TrendAnalysisBo trendAnalysis;
+
     /** 综合结论与选号建议 */
     private String conclusion;
 
@@ -250,5 +259,28 @@ public class LotteryAnalysisRespBo {
         private Integer count;
         /** 出现频率（0-1） */
         private Double frequency;
+    }
+
+    /**
+     * 趋势均线分析结果。
+     * <p>基于反向指数（平均遗漏 / max(遗漏, 1)）的 MA5/MA10/MA20 均线排列：
+     * <ul>
+     *     <li>多头排列（MA5 > MA10 > MA20）→ 指数上升 → 遗漏减少 → 号码趋热 → 优先补充</li>
+     *     <li>空头排列（MA5 < MA10 < MA20）→ 指数下降 → 遗漏增大 → 号码趋冷 → 谨慎使用</li>
+     * </ul>
+     */
+    @Data
+    @lombok.Builder
+    @lombok.NoArgsConstructor
+    @lombok.AllArgsConstructor
+    public static class TrendAnalysisBo {
+        /** 趋势上升红球（指数均线多头排列，号码趋热，补号时优先选择） */
+        private List<Integer> risingRedBalls;
+        /** 趋势下降红球（指数均线空头排列，号码趋冷，补号时谨慎使用） */
+        private List<Integer> fallingRedBalls;
+        /** 趋势上升蓝球 */
+        private List<Integer> risingBlueBalls;
+        /** 趋势下降蓝球 */
+        private List<Integer> fallingBlueBalls;
     }
 }

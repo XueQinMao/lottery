@@ -5,14 +5,18 @@ import com.my.project.llm.bo.KillNumberResultBo.KillItemBo;
 import com.my.project.llm.bo.LotteryAnalysisReqBo.DrawRecord;
 import com.my.project.service.llm.IKillNumberService;
 import com.my.project.service.llm.config.KillNumberConfig;
+import com.my.project.service.support.LotteryTrendUtils;
+import com.my.project.service.support.LotteryTrendUtils.TrendAnalysisResult;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.ListUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -63,9 +67,9 @@ public class KillNumberServiceImpl implements IKillNumberService {
             log.warn("杀号计算样本为空，跳过");
             return emptyResult();
         }
-
+        List<DrawRecord> drawRecords = records.subList(0, Math.min(30, records.size()));
         // 遗漏计算要求期号升序（最旧→最新），兼容上游降序传入
-        List<DrawRecord> chronological = toAscending(records);
+        List<DrawRecord> chronological = toAscending(drawRecords);
 
         Map<Integer, Integer> redOmission = calcRedOmission(chronological);
         Map<Integer, Integer> blueOmission = calcBlueOmission(chronological);
@@ -77,6 +81,14 @@ public class KillNumberServiceImpl implements IKillNumberService {
             killNumberConfig.getMaxHardKillRed(), killNumberConfig.getHardThreshold(), Set.of(), true);
         List<KillItemBo> hardKillBlue = pickTop(blueScores, blueOmission, sampleSize,
             killNumberConfig.getMaxHardKillBlue(), killNumberConfig.getHardThreshold(), Set.of(), false);
+
+        // 趋势均线直接杀号：不参与加权融合，达标直接进硬杀清单
+        Set<Integer> alreadyRed = ballsOf(hardKillRed);
+        Set<Integer> alreadyBlue = ballsOf(hardKillBlue);
+        List<KillItemBo> trendKillRed = calcTrendKills(records, true, alreadyRed);
+        List<KillItemBo> trendKillBlue = calcTrendKills(records, false, alreadyBlue);
+        hardKillRed.addAll(trendKillRed);
+        hardKillBlue.addAll(trendKillBlue);
 
         //默认吧最近一期的都杀掉
         hardKillBlue.add(
@@ -308,6 +320,210 @@ public class KillNumberServiceImpl implements IKillNumberService {
         return 0.0;
     }
 
+    // ==================== 趋势均线维度 ====================
+
+    /**
+     * 趋势均线直接杀号：计算所有号码的趋势得分，达标者直接生成杀号项。
+     * <p>不参与加权融合，独立判断后直接进入硬杀清单。
+     *
+     * @param records  升序开奖记录
+     * @param isRed    true=红球(1-33)，false=蓝球(1-16)
+     * @param exclude  已在硬杀清单中的号码，跳过避免重复
+     * @return 趋势杀号清单
+     */
+    private List<KillItemBo> calcTrendKills(List<DrawRecord> records, boolean isRed, Set<Integer> exclude) {
+        List<Set<Integer>> drawSets = new ArrayList<>();
+        for (DrawRecord r : records) {
+            Set<Integer> set = new HashSet<>();
+            if (isRed) {
+                if (r.getRedBalls() != null) {
+                    set.addAll(r.getRedBalls());
+                }
+            } else {
+                if (r.getBlueBall() != null) {
+                    set.add(r.getBlueBall());
+                }
+            }
+            drawSets.add(set);
+        }
+        int min = isRed ? RED_MIN : BLUE_MIN;
+        int max = isRed ? RED_MAX : BLUE_MAX;
+        KillNumberConfig.TrendThreshold trendCfg = killNumberConfig.getTrend();
+        double killThreshold = trendCfg.getKillThreshold();
+        int topN = isRed ? trendCfg.getMaxTrendKillRed() : trendCfg.getMaxTrendKillBlue();
+
+        // 候选：达标后按 score → 空头开口 → 当前指数升序 → 当前遗漏降序 → 球号 排序，截断 Top-N
+        List<TrendKillCandidate> candidates = new ArrayList<>();
+        for (int b = min; b <= max; b++) {
+            if (exclude.contains(b)) {
+                continue;
+            }
+            TrendAnalysisResult result = LotteryTrendUtils.analyze(drawSets, b);
+            double score = trendScore(result);
+            if (score < killThreshold) {
+                continue;
+            }
+            candidates.add(new TrendKillCandidate(b, score, calcBearishSpread(result),
+                currentIndex(result), result.getStats().getCurrentOmission(),
+                KillItemBo.builder()
+                    .ball(b)
+                    .score(round(score))
+                    .reason(buildTrendReason(result, score))
+                    .build()));
+        }
+
+        candidates.sort(Comparator
+            .comparingDouble(TrendKillCandidate::score).reversed()
+            .thenComparing(Comparator.comparingDouble(TrendKillCandidate::spread).reversed())
+            .thenComparingDouble(TrendKillCandidate::currentIndex)
+            .thenComparing(Comparator.comparingInt(TrendKillCandidate::currentOmission).reversed())
+            .thenComparingInt(TrendKillCandidate::ball));
+
+        List<KillItemBo> kills = candidates.stream()
+            .limit(Math.max(topN, 0))
+            .map(TrendKillCandidate::item)
+            .collect(Collectors.toList());
+
+        if (!kills.isEmpty()) {
+            log.info("趋势杀号({} Top{}): {}", isRed ? "红球" : "蓝球", topN,
+                kills.stream().map(k -> String.format("%02d(%.3f:%s)", k.getBall(), k.getScore(), k.getReason()))
+                    .collect(Collectors.joining(", ")));
+        }
+        return kills;
+    }
+
+    /**
+     * 空头开口：(MA20 - MA5) / MA20，越大表示空头排列越陡，同分时优先杀。
+     */
+    private double calcBearishSpread(TrendAnalysisResult result) {
+        List<Double> ma5 = result.getMa5();
+        List<Double> ma20 = result.getMa20();
+        int last = ma5.size() - 1;
+        if (last < 0 || ma5.get(last) == null || ma20.get(last) == null) {
+            return 0.0;
+        }
+        double v5 = ma5.get(last);
+        double v20 = ma20.get(last);
+        return (v20 - v5) / Math.max(v20, 0.01);
+    }
+
+    private double currentIndex(TrendAnalysisResult result) {
+        List<Double> indexValues = result.getIndexValues();
+        if (indexValues == null || indexValues.isEmpty()) {
+            return Double.MAX_VALUE;
+        }
+        return indexValues.get(indexValues.size() - 1);
+    }
+
+    private record TrendKillCandidate(int ball, double score, double spread, double currentIndex,
+                                      int currentOmission, KillItemBo item) {
+    }
+
+    /**
+     * 构建趋势杀号原因说明。
+     */
+    private String buildTrendReason(TrendAnalysisResult result, double score) {
+        List<Double> ma5 = result.getMa5();
+        List<Double> ma10 = result.getMa10();
+        List<Double> ma20 = result.getMa20();
+        int last = ma5.size() - 1;
+        List<String> reasons = new ArrayList<>();
+
+        if (last >= 0 && ma5.get(last) != null && ma10.get(last) != null && ma20.get(last) != null) {
+            double v5 = ma5.get(last), v10 = ma10.get(last), v20 = ma20.get(last);
+            if (v5 < v10 && v10 < v20) {
+                reasons.add("指数均线空头排列");
+            }
+        }
+        if (last >= 1 && ma5.get(last - 1) != null && ma20.get(last - 1) != null) {
+            if (ma5.get(last - 1) >= ma20.get(last - 1) && ma5.get(last) < ma20.get(last)) {
+                reasons.add("短期均线下穿长期均线");
+            }
+        }
+        if (reasons.isEmpty()) {
+            reasons.add("趋势走弱");
+        }
+        return String.join(" + ", reasons) + String.format(" 置信度%.3f", score);
+    }
+
+    /**
+     * 根据趋势分析结果计算趋势维度得分。
+     * <p>规则：
+     * <ol>
+     *     <li>空头排列（MA5 < MA10 < MA20）→ 指数持续下跌 → 遗漏增大 → 杀号</li>
+     *     <li>大幅上涨后空头排列 → 额外加分（将继续下跌）</li>
+     *     <li>短期均线下穿长期均线 + 长期均线疲软 + 夹角够大 → 杀号</li>
+     * </ol>
+     *
+     * @param result 趋势分析结果（含指数序列、均线、统计）
+     * @return 趋势得分 [0,1]
+     */
+    private double trendScore(TrendAnalysisResult result) {
+        List<Double> indexValues = result.getIndexValues();
+        List<Double> ma5 = result.getMa5();
+        List<Double> ma10 = result.getMa10();
+        List<Double> ma20 = result.getMa20();
+
+        int last = indexValues.size() - 1;
+        // MA20 需要至少 20 期数据
+        if (last < 20 || ma5.get(last) == null || ma10.get(last) == null || ma20.get(last) == null) {
+            return 0.0;
+        }
+
+        KillNumberConfig.TrendThreshold t = killNumberConfig.getTrend();
+        double score = 0.0;
+
+        double v5 = ma5.get(last);
+        double v10 = ma10.get(last);
+        double v20 = ma20.get(last);
+
+        // 1. 空头排列：MA5 < MA10 < MA20（指数均线空头排列，将继续下跌）
+        boolean bearish = v5 < v10 && v10 < v20;
+        if (bearish) {
+            score = Math.max(score, t.getBearishScore());
+
+            // 2. 大幅上涨后空头排列：近期峰值 / 当前值 > riseRatio
+            int lookback = Math.min(t.getRiseLookback(), indexValues.size() - 1);
+            double recentMax = 0;
+            for (int i = last - lookback; i <= last; i++) {
+                if (i >= 0 && indexValues.get(i) > recentMax) {
+                    recentMax = indexValues.get(i);
+                }
+            }
+            double currentIdx = Math.max(indexValues.get(last), 0.01);
+            if (recentMax / currentIdx > t.getRiseRatio()) {
+                score = Math.max(score, t.getBearishScore() + t.getPostRiseBonus());
+            }
+        }
+
+        // 3. 短期均线下穿长期均线 + 夹角够大 → 杀号
+        if (last >= 1 && ma5.get(last - 1) != null && ma20.get(last - 1) != null) {
+            boolean crossBelow = ma5.get(last - 1) >= ma20.get(last - 1) && v5 < v20;
+            if (crossBelow) {
+                double angle = Math.abs(v5 - v20) / Math.max(v20, 0.01);
+                if (angle > t.getAngleThreshold()) {
+                    score = Math.max(score, t.getCrossScore());
+                }
+            }
+        }
+
+        // 4. 长期均线走势疲软（MA20 斜率 ≤ 0）+ 短期在长期下方 + 夹角够大
+        int slopeLookback = Math.min(t.getMaSlopeLookback(), ma20.size() - 1);
+        if (slopeLookback > 0 && ma20.get(last - slopeLookback) != null) {
+            double ma20Slope = v20 - ma20.get(last - slopeLookback);
+            boolean ma20Weak = ma20Slope <= 0;
+            boolean shortBelowLong = v5 < v20;
+            if (ma20Weak && shortBelowLong) {
+                double angle = Math.abs(v5 - v20) / Math.max(v20, 0.01);
+                if (angle > t.getAngleThreshold()) {
+                    score = Math.max(score, t.getCrossScore() * 0.8);
+                }
+            }
+        }
+
+        return Math.min(score, 1.0);
+    }
+
     // ==================== 加权融合 ====================
 
     private double weightedScore(Map<String, Double> dims) {
@@ -395,11 +611,15 @@ public class KillNumberServiceImpl implements IKillNumberService {
     }
 
     private String buildBasis(int sampleSize) {
+        KillNumberConfig.TrendThreshold trend = killNumberConfig.getTrend();
         return String.format(
             "基于最近 %d 期样本，按 frequency(冷热)/omission(遗漏)/zone(三区)/tail(尾数)/rebound(冷号回补保护) "
-                + "五维度加权融合，硬杀阈值 %.2f；红球极值遗漏(≥%.0f%%样本)号码白名单保护不进硬杀。",
+                + "五维度加权融合，硬杀阈值 %.2f；红球极值遗漏(≥%.0f%%样本)号码白名单保护不进硬杀。"
+                + "趋势均线(空头排列/短穿长)独立杀号，不参与加权融合；"
+                + "趋势杀上限红 Top%d / 蓝 Top%d（按趋势分→空头开口→当前指数→遗漏排序）。",
             sampleSize, killNumberConfig.getHardThreshold(),
-            killNumberConfig.getExtremeOmissionWhitelistRatio() * 100);
+            killNumberConfig.getExtremeOmissionWhitelistRatio() * 100,
+            trend.getMaxTrendKillRed(), trend.getMaxTrendKillBlue());
     }
 
     private String buildReason(int ball, double score) {
