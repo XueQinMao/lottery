@@ -97,7 +97,7 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
             throw new IllegalStateException("无可用的历史开奖记录用于分析");
         }
         String period = latest.getFirst().getPeriod();
-        String cacheKey = CACHE_KEY_PREFIX + period + sampleSize + analysisEngine;
+        String cacheKey = CACHE_KEY_PREFIX + period + sampleSize;
         //        String cacheKey = CACHE_KEY_PREFIX + period + UUID.randomUUID().toString();
         var respBo = multiLevelCache.get(cacheKey, k -> doAnalyze(count));
         Assert.notNull(respBo, "特征数据获取异常，请稍后重试");
@@ -124,7 +124,7 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
 
             LotteryAnalysisRespBo result = LotteryFeatureStatsUtils.analyze(reqBo.getRecords());
             if (useLlmEngine()) {
-                result.setFeatureForecast(forecastFeaturesByLlm(records));
+                result.setFeatureForecast(forecastFeaturesByLlm(drawRecords));
             } else {
                 result.setFeatureForecast(forecastFeaturesByJava(result));
             }
@@ -173,7 +173,8 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
     /**
      * 红球 11 个 + 蓝球 4 个形态各开一条线程请求 LLM；指数数据走形态指数页同一套 analyzePatternTrend。
      */
-    private FeatureForecastBo forecastFeaturesByLlm(List<HistoryRecord> latestNewestFirst) {
+    private FeatureForecastBo forecastFeaturesByLlm(List<LotteryAnalysisReqBo.DrawRecord> drawRecords) {
+        List<HistoryRecord> latestNewestFirst = drawRecords.stream().map(this::toHistoryRecord).toList();
         EnumMap<FeatureKind, CompletableFuture<FeatureForecastItem>> futures = new EnumMap<>(FeatureKind.class);
         for (FeatureKind kind : FeatureKind.values()) {
             futures.put(kind, CompletableFuture.supplyAsync(
@@ -362,5 +363,19 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
                 record.getNum6());
         return LotteryAnalysisReqBo.DrawRecord.builder().period(record.getPeriod()).redBalls(redBalls)
             .blueBall(record.getSpecial()).build();
+    }
+
+    private HistoryRecord toHistoryRecord(LotteryAnalysisReqBo.DrawRecord draw) {
+        List<Integer> reds = draw.getRedBalls() == null ? List.of() : draw.getRedBalls();
+        return HistoryRecord.builder()
+            .period(draw.getPeriod())
+            .num1(reds.size() > 0 ? reds.get(0) : null)
+            .num2(reds.size() > 1 ? reds.get(1) : null)
+            .num3(reds.size() > 2 ? reds.get(2) : null)
+            .num4(reds.size() > 3 ? reds.get(3) : null)
+            .num5(reds.size() > 4 ? reds.get(4) : null)
+            .num6(reds.size() > 5 ? reds.get(5) : null)
+            .special(draw.getBlueBall())
+            .build();
     }
 }
