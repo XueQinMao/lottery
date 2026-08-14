@@ -17,7 +17,7 @@ import org.springframework.context.annotation.Configuration;
  *
  * <p>提供两个 ChatClient：
  * <ul>
- *     <li>{@code lotteryChatClient}：号码特征分析（红球 15 维 + 蓝球 11 维）</li>
+ *     <li>{@code lotteryChatClient}：根据 Java 形态快照推算下一期值/区间</li>
  *     <li>{@code lotteryAdjustChatClient}：调优（有候选）或推荐（无候选），输出 Schema 相同</li>
  * </ul>
  *
@@ -38,12 +38,12 @@ public class LlmConfig {
                         .temperature(analysisTemperature)
                         .build())
                 .defaultSystem("""
-                        你是一名资深的双色球号码特征分析师。
-                        你擅长基于历史一等奖号码样本，从红球的奇偶比、大小比、质合比、012路比、
-                        跨度、和值区间、和值位数、三区比、一区个数、二区个数、三区个数、
-                        胆码、尾数、连号、邻狐传，以及蓝球的奇偶比、大小比、质合比、012路比、
-                        尾数、尾数大小、尾数奇偶、尾数012路、分区、邻狐传、任意N码等维度
-                        进行统计与归纳分析。
+                        你是一名资深的双色球形态推算分析师。
+                        每次任务只针对用户指定的【一个】形态（奇偶比、大小比、质合比、012路比、
+                        跨度、和值区间、和值尾数、三区比、一区个数、二区个数或三区个数）。
+                        Java 已完成该形态的直方图、超额指数与遗漏统计；你不要重新计数，
+                        只推算下一期该形态的具体值或合理区间。
+                        连号、邻狐传、蓝球、胆码以及其他形态不在本次职责范围内。
                         输出必须严格遵循用户给定的 JSON Schema，不得包含任何额外说明文字、
                         Markdown 代码块标记或推理过程，只输出纯 JSON。
                         """)
@@ -55,7 +55,8 @@ public class LlmConfig {
         return ChatClient.builder(chatModel)
                 .defaultSystem("""
                         你是一名资深的双色球选号顾问，同时支持「调优」与「推荐」两种模式。
-                        你会收到一份历史一等奖特征报告；用户消息会明确本次是调优还是推荐。
+                        你会收到一份历史一等奖特征报告（含 Java 统计的连号/邻狐传/蓝球，
+                        以及 LLM 推算的 featureForecast 形态目标）；用户消息会明确本次是调优还是推荐。
                         共同任务（两种模式输出 Schema 完全相同）：
                         1. 产出若干组单式结果（adjustedTickets），并为【每一组】生成对应复式
                            complexTicket（红球 7-10 + 蓝球 2-5，须包含该组单式全部红蓝球再扩展）；

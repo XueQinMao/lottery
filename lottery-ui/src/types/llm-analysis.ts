@@ -49,16 +49,30 @@ export interface SampleOverview {
   avgBigSmall?: string;
 }
 
-export interface BankerCandidate {
-  balls: string;
-  count: number;
-  frequency: number;
+export interface FeatureForecastItem {
+  value?: string;
+  alternatives?: string[];
+  confidence?: number;
+  reason?: string;
 }
 
-export interface BankerAnalysis {
-  oneBanker?: BankerCandidate[];
-  twoBanker?: BankerCandidate[];
-  threeBanker?: BankerCandidate[];
+export interface FeatureForecast {
+  oddEven?: FeatureForecastItem;
+  bigSmall?: FeatureForecastItem;
+  primeComposite?: FeatureForecastItem;
+  ratio012?: FeatureForecastItem;
+  span?: FeatureForecastItem;
+  sumRange?: FeatureForecastItem;
+  sumTail?: FeatureForecastItem;
+  threeZone?: FeatureForecastItem;
+  zone1Count?: FeatureForecastItem;
+  zone2Count?: FeatureForecastItem;
+  zone3Count?: FeatureForecastItem;
+  blueOddEven?: FeatureForecastItem;
+  blueBigSmall?: FeatureForecastItem;
+  blueBigSmallOddEven?: FeatureForecastItem;
+  blueRatio012?: FeatureForecastItem;
+  basis?: string;
 }
 
 export interface CountMap {
@@ -73,15 +87,16 @@ export interface LotteryAnalysisResp {
   ratio012?: CountMap;
   span?: CountMap;
   sumRange?: CountMap;
+  sumTail?: CountMap;
   sumDigit?: CountMap;
   threeZoneRatio?: CountMap;
   zone1Count?: CountMap;
   zone2Count?: CountMap;
   zone3Count?: CountMap;
-  banker?: BankerAnalysis;
   killNumbers?: KillNumberResult;
   coldHotAnalysis?: ColdHotAnalysis;
   predictedThreeZoneRatio?: ThreeZoneRatioPredict;
   trendAnalysis?: TrendAnalysis;
+  featureForecast?: FeatureForecast;
   conclusion?: string;
 }

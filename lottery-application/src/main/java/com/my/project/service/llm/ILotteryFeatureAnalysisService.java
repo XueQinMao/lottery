@@ -7,7 +7,7 @@ import com.my.project.service.llm.pojo.dto.LLmAdjustDto;
 /**
  * ILotteryFeatureAnalysisService
  *
- * <p>应用层封装：拉取最近 N 期一等奖号码，调用大模型进行多维度特征分析。
+ * <p>应用层封装：拉取最近 N 期一等奖号码，Java 统计直方图并并发推算下一期形态。
  *
  * @author 刘强
  * @version 2026/07/21 20:35

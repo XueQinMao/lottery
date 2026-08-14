@@ -4,8 +4,6 @@ import com.my.project.llm.bo.LotteryAnalysisReqBo.DrawRecord;
 import com.my.project.llm.bo.LotteryAnalysisRespBo;
 import com.my.project.llm.bo.LotteryAnalysisRespBo.AnyNAnalysis;
 import com.my.project.llm.bo.LotteryAnalysisRespBo.AnyNCandidate;
-import com.my.project.llm.bo.LotteryAnalysisRespBo.BankerAnalysis;
-import com.my.project.llm.bo.LotteryAnalysisRespBo.BankerCandidate;
 import com.my.project.llm.bo.LotteryAnalysisRespBo.BlueAnalysis;
 import com.my.project.llm.bo.LotteryAnalysisRespBo.BlueNeighborFoxTransmit;
 import com.my.project.llm.bo.LotteryAnalysisRespBo.ConsecutiveAnalysis;
@@ -13,6 +11,7 @@ import com.my.project.llm.bo.LotteryAnalysisRespBo.NeighborFoxTransmit;
 import com.my.project.llm.bo.LotteryAnalysisRespBo.SampleOverview;
 import com.my.project.llm.bo.LotteryAnalysisRespBo.TailAnalysis;
 import com.my.project.llm.bo.LotteryAnalysisRespBo.ThreeDAnalysis;
+import com.my.project.service.support.LotteryFeatureTrendUtils.FeatureKind;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -28,8 +27,8 @@ import java.util.stream.Collectors;
 /**
  * LotteryFeatureStatsUtils
  *
- * <p>用 Java 计算特征分析报告中除杀号 / 冷热温 / 三区预测 / 趋势均线以外的全部直方图。
- * 这四项仍由外层服务计算后挂到 {@link LotteryAnalysisRespBo}。
+ * <p>用 Java 计算特征分析报告中除杀号 / 冷热温 / 三区预测 / 趋势均线 / 形态推算以外的直方图。
+ * 连号、邻狐传、蓝球由本工具计算；胆码不再统计。
  *
  * @author 刘强
  * @version 2026/08/13
@@ -74,6 +73,7 @@ public final class LotteryFeatureStatsUtils {
         Map<String, Integer> ratio012 = new HashMap<>();
         Map<String, Integer> spanMap = new HashMap<>();
         Map<String, Integer> sumRange = new HashMap<>();
+        Map<String, Integer> sumTail = initCountMap(0, 9);
         Map<String, Integer> sumDigit = new HashMap<>();
         Map<String, Integer> threeZone = new HashMap<>();
         Map<String, Integer> zone1 = initCountMap(0, 6);
@@ -86,9 +86,6 @@ public final class LotteryFeatureStatsUtils {
         Map<String, Integer> hundreds = initCountMap(0, 3);
         Map<String, Integer> consecType = new HashMap<>();
         Map<String, Integer> hotConsec = new HashMap<>();
-        Map<String, Integer> oneBall = new HashMap<>();
-        Map<String, Integer> twoBall = new HashMap<>();
-        Map<String, Integer> threeBall = new HashMap<>();
 
         int sumTotal = 0;
         int spanTotal = 0;
@@ -137,7 +134,6 @@ public final class LotteryFeatureStatsUtils {
                 } else {
                     z3++;
                 }
-                inc(oneBall, String.valueOf(ball));
                 inc(tailValue, String.valueOf(ball % 10));
                 inc(ones, String.valueOf(ball % 10));
                 inc(tens, String.valueOf((ball / 10) % 10));
@@ -155,8 +151,8 @@ public final class LotteryFeatureStatsUtils {
             inc(primeComp, prime + ":" + (6 - prime));
             inc(ratio012, r0 + ":" + r1 + ":" + r2);
             inc(spanMap, String.valueOf(span));
-            int rangeStart = (sum / 10) * 10;
-            inc(sumRange, rangeStart + "-" + (rangeStart + 9));
+            inc(sumRange, LotteryFeatureTrendUtils.extract(reds, FeatureKind.SUM_RANGE));
+            inc(sumTail, String.valueOf(sum % 10));
             inc(sumDigit, sum < 100 ? "2位" : "3位");
             inc(threeZone, z1 + ":" + z2 + ":" + z3);
             inc(zone1, String.valueOf(z1));
@@ -172,15 +168,6 @@ public final class LotteryFeatureStatsUtils {
             inc(sameTail, String.valueOf(Math.min(sameTailGroups, 3)));
 
             inc(consecType, classifyConsecutive(reds, hotConsec));
-
-            for (int i = 0; i < 6; i++) {
-                for (int j = i + 1; j < 6; j++) {
-                    inc(twoBall, reds.get(i) + "," + reds.get(j));
-                    for (int k = j + 1; k < 6; k++) {
-                        inc(threeBall, reds.get(i) + "," + reds.get(j) + "," + reds.get(k));
-                    }
-                }
-            }
         }
 
         NeighborFoxTransmit nft = calcRedNeighborFox(redSets);
@@ -201,17 +188,12 @@ public final class LotteryFeatureStatsUtils {
         TreeMap<String, Integer> sortedSumRange = new TreeMap<>(Comparator.comparingInt(LotteryFeatureStatsUtils::rangeStart));
         sortedSumRange.putAll(sumRange);
         result.setSumRange(sortedSumRange);
+        result.setSumTail(sortedKey(sumTail));
         result.setSumDigit(sortedByCount(sumDigit));
         result.setThreeZoneRatio(sortedByCount(threeZone));
         result.setZone1Count(sortedKey(zone1));
         result.setZone2Count(sortedKey(zone2));
         result.setZone3Count(sortedKey(zone3));
-
-        BankerAnalysis banker = new BankerAnalysis();
-        banker.setOneBanker(topCandidates(oneBall, n, TOP_N));
-        banker.setTwoBanker(topCandidates(twoBall, n, TOP_N));
-        banker.setThreeBanker(topCandidates(threeBall, n, TOP_N));
-        result.setBanker(banker);
 
         TailAnalysis tail = new TailAnalysis();
         tail.setTailValue(sortedKey(tailValue));
@@ -278,6 +260,7 @@ public final class LotteryFeatureStatsUtils {
         int n = blues.size();
         Map<String, Integer> oddEven = new HashMap<>();
         Map<String, Integer> bigSmall = new HashMap<>();
+        Map<String, Integer> bigSmallOddEven = new HashMap<>();
         Map<String, Integer> primeComp = new HashMap<>();
         Map<String, Integer> ratio012 = new HashMap<>();
         Map<String, Integer> tailValue = initCountMap(0, 9);
@@ -294,6 +277,7 @@ public final class LotteryFeatureStatsUtils {
         for (int b : blues) {
             inc(oddEven, b % 2 == 1 ? "奇" : "偶");
             inc(bigSmall, b >= 9 ? "大" : "小");
+            inc(bigSmallOddEven, LotteryFeatureTrendUtils.extractBlue(b, FeatureKind.BLUE_BIG_SMALL_ODD_EVEN));
             inc(primeComp, BLUE_PRIMES.contains(b) ? "质" : "合");
             int mod = b % 3;
             inc(ratio012, mod == 0 ? "0路" : (mod == 1 ? "1路" : "2路"));
@@ -349,6 +333,7 @@ public final class LotteryFeatureStatsUtils {
         BlueAnalysis blue = new BlueAnalysis();
         blue.setOddEvenRatio(sortedByCount(oddEven));
         blue.setBigSmallRatio(sortedByCount(bigSmall));
+        blue.setBigSmallOddEvenRatio(sortedByCount(bigSmallOddEven));
         blue.setPrimeCompositeRatio(sortedByCount(primeComp));
         blue.setRatio012(sortedByCount(ratio012));
         blue.setTailValue(sortedKey(tailValue));
@@ -437,14 +422,14 @@ public final class LotteryFeatureStatsUtils {
         return topAnyN(counts, denom, topN);
     }
 
-    private static List<BankerCandidate> topCandidates(Map<String, Integer> counts, int denom, int topN) {
+    private static List<AnyNCandidate> topAnyN(Map<String, Integer> counts, int denom, int topN) {
         double d = Math.max(denom, 1);
         return counts.entrySet().stream()
             .sorted(Comparator.<Map.Entry<String, Integer>>comparingInt(Map.Entry::getValue).reversed()
                 .thenComparing(Map.Entry::getKey))
             .limit(topN)
             .map(e -> {
-                BankerCandidate c = new BankerCandidate();
+                AnyNCandidate c = new AnyNCandidate();
                 c.setBalls(e.getKey());
                 c.setCount(e.getValue());
                 c.setFrequency(round4(e.getValue() / d));
@@ -453,31 +438,18 @@ public final class LotteryFeatureStatsUtils {
             .toList();
     }
 
-    private static List<AnyNCandidate> topAnyN(Map<String, Integer> counts, int denom, int topN) {
-        return topCandidates(counts, denom, topN).stream().map(b -> {
-            AnyNCandidate c = new AnyNCandidate();
-            c.setBalls(b.getBalls());
-            c.setCount(b.getCount());
-            c.setFrequency(b.getFrequency());
-            return c;
-        }).toList();
-    }
-
     private static String buildConclusion(LotteryAnalysisRespBo r, int n) {
         SampleOverview o = r.getSampleOverview();
         String odd = topKey(r.getOddEvenRatio());
         String zone = topKey(r.getThreeZoneRatio());
-        String one = (r.getBanker() != null && r.getBanker().getOneBanker() != null
-            && !r.getBanker().getOneBanker().isEmpty())
-            ? r.getBanker().getOneBanker().getFirst().getBalls() : "-";
         String blueHot = "-";
         if (r.getBlue() != null && r.getBlue().getAnyN() != null
             && r.getBlue().getAnyN().getAny1() != null && !r.getBlue().getAnyN().getAny1().isEmpty()) {
             blueHot = r.getBlue().getAnyN().getAny1().getFirst().getBalls();
         }
         return String.format(
-            "样本%d期，红球均和值%s、均跨度%s；奇偶比以%s为主，三区比以%s为主；红球高频胆码%s，蓝球高频%s。杀号/冷热温/三区预测见外层计算结果。",
-            n, o.getAvgSum(), o.getAvgSpan(), odd, zone, one, blueHot);
+            "样本%d期，红球均和值%s、均跨度%s；奇偶比以%s为主，三区比以%s为主；蓝球高频%s。形态推算/杀号/冷热温见外层计算结果。",
+            n, o.getAvgSum(), o.getAvgSpan(), odd, zone, blueHot);
     }
 
     private static String topKey(Map<String, Integer> map) {

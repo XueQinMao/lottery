@@ -9,12 +9,13 @@ package com.my.project.llm.prompt;
  *   <li>{@link #RECOMMEND_PROMPT}：推荐模式（tickets 为空）— 按特征报告直接生成 N 组 + 组内复式 + 最终复式/单式</li>
  * </ol>
  *
- * <p>核心原则：特征报告约束「形态」，冷热/分区/邻狐传约束「结构」；
- * 热号仅作候选，禁止复式主体由超热胆码堆砌。
+ * <p>核心原则：`featureForecast` 约束「下一期形态目标」，冷热/分区/邻狐传约束「结构」；
+ * 热号仅作候选，禁止复式主体由超热号堆砌。已取消胆码。
  *
  * <p>硬约束：杀号清单禁止出现；冷热温档位取自 coldHotAnalysis；
- * 红球和值 ∈ [90,130]、跨度 ∈ [16,28]；红球奇数个数 ≤ 5、质数个数 ≤ 4
- * （适用所有红球输出；质数取 2,3,5,7,11,13,17,19,23,29,31，1 视为合数）。
+ * 形态优先落入 featureForecast；若缺失则红球和值 ∈ [90,130]、跨度 ∈ [16,28]；
+ * 红球奇数个数 ≤ 5、质数个数 ≤ 4
+ * （适用所有红球输出；选号质数取 2,3,5,7,11,13,17,19,23,29,31，1 视为合数）。
  *
  * <p>软约束：三区比优先落在 predictedThreeZoneRatio.candidates 中概率较高者。
  *
@@ -33,8 +34,8 @@ public final class LotteryAdjustPrompt {
             并为每一组生成对应复式；最后再综合输出【一组】最终可购买的复式。
 
             【核心原则】
-            1. 特征报告用于约束形态（奇偶、大小、质合、012路、跨度、和值、三区、连号类型等），
-               不得把报告 Top 胆码/热号直接当作「必出号码表」整池搬入。
+            1. 下一期形态以报告 `featureForecast` 为准（value 为主推，alternatives 为备选）。
+               历史直方图只作背景，不得把高频号当作「必出号码表」整池搬入（已取消胆码）。
             2. 热号仅作候选池；选号主体必须冷热分散、三区分散，并防范热号集体回冷。
             3. 所有替换与扩号须可核验：冷热档位、分区、连号、邻狐传均需满足硬性约束。
             4. 【杀号硬约束】若报告中存在 `killNumbers` 字段：
@@ -48,22 +49,34 @@ public final class LotteryAdjustPrompt {
                - 须直接使用上述清单判定每个候选号码的冷热档位，**不得**再自行从频次表推断冷热；
                - 冷热配比要求见下方调优规则（热号≤上限、冷号≥下限等）；
                - 若 `coldHotAnalysis` 为 null，则按报告频次表自行估算冷热。
-            6. 【红球和值与跨度硬约束】所有红球输出（adjustedRedBalls、complexTicket.redBalls、
-               finalComplexTicket.redBalls、finalSingleTickets.redBalls）必须同时满足：
-               - 和值（6 个红球之和）∈ [90, 130]；
-               - 跨度（最大红球 − 最小红球）∈ [16, 28]。
+            6. 【红球和值与跨度硬约束】所有红球输出必须同时满足：
+               - 若 `featureForecast.span` / `sumRange` 有值：跨度、和值须落入其 value（精确值或闭区间），
+                 冲突时可用 alternatives；
+               - 仅当上述字段缺失时回退：和值 ∈ [90, 130]、跨度 ∈ [16, 28]。
                任一条件不满足即视为违规，须在输出前自行调整号码至合规。
             7. 【红球奇偶与质合上限硬约束】所有红球输出（adjustedRedBalls、complexTicket.redBalls、
                finalComplexTicket.redBalls、finalSingleTickets.redBalls）必须同时满足：
                - 奇数个数 ≤ 5（禁止 6 个红球全为奇数，即禁止 6:0 奇偶比）；
                - 质数个数 ≤ 4（质数取 2,3,5,7,11,13,17,19,23,29,31，1 视为合数；禁止 ≥5 个质数）。
                任一条件不满足即视为违规，须在输出前自行调整号码至合规。
-            8. 【三区比预测软约束】若报告存在 `predictedThreeZoneRatio` 字段：
+            8. 【形态推算硬约束】若报告存在 `featureForecast` 字段：
+               - 各维 `value` 为下一期主推形态（精确值如 "3:3"、"21"，或区间如 "20-24"、"97-102"）；
+               - 单式 6 红的奇偶比、大小比、质合比、012路比、三区比须等于对应 value，
+                 或落在 alternatives 中；跨度/和值/和尾/区个数按精确值或闭区间校验；
+               - 三区比必须与 zone1Count / zone2Count / zone3Count 自洽；
+               - 蓝球：若存在 `blueOddEven` / `blueBigSmall` / `blueBigSmallOddEven` / `blueRatio012`，
+                 单式蓝球须同时落入对应 value 或 alternatives。
+                 口径：1-8 小、9-16 大；奇偶按 n%2；大小奇偶为 小奇/小偶/大奇/大偶；
+                 012路按 n%3（0路=3,6,9,12,15；1路=1,4,7,10,13,16；2路=2,5,8,11,14）；
+               - 不得用历史最高频直方图覆盖 featureForecast；
+               - 若 `featureForecast` 为 null，则按报告直方图高频/次高频形态选号。
+            9. 【三区比预测软约束】若报告存在 `predictedThreeZoneRatio` 字段：
                - `candidates` 为下一期 Top-K 候选三区比及概率，`lastRatio` 为最近一期实际三区比；
                - 最终单式/复式的三区比应尽量落在 Top 候选之中（概率越高越优先）；
                - 不得强行追求概率最高的单一形态而违反其他硬约束（冷热/分区/和值/跨度/连号等）；
+               - 若与 `featureForecast.threeZone` 冲突，以 featureForecast 为准；
                - 若 `predictedThreeZoneRatio` 为 null，则按报告 `threeZoneRatio` 历史高频形态选号。
-            9. 【趋势均线补充约束】若报告存在 `trendAnalysis` 字段：
+            10. 【趋势均线补充约束】若报告存在 `trendAnalysis` 字段：
                - `risingRedBalls` / `risingBlueBalls` 为指数均线多头排列的号码（整体趋势向上，
                  遗漏减少、号码趋热），在选号和补号时**优先**从这些号码中补充；
                - `fallingRedBalls` / `fallingBlueBalls` 为指数均线空头排列的号码（整体趋势向下，
@@ -71,7 +84,7 @@ public final class LotteryAdjustPrompt {
                - 补号优先级：趋势上升号码 > 趋势平稳号码 > 趋势下降号码；
                - 不得违反杀号/冷热/和值/跨度等硬约束，趋势仅作为补号倾向性参考；
                - 若 `trendAnalysis` 为 null，则忽略本条约束。
-            10. 【极端整组重调】默认以局部替换为主；但若本组原号码陷入极端不合规，
+            11. 【极端整组重调】默认以局部替换为主；但若本组原号码陷入极端不合规，
                **允许将红球 6 个与蓝球全部替换**，等价于按报告从零重选一组单式。
                极端情形包括但不限于：
                - 原红球中 ≥3 个落入 `hardKillRed`，或蓝球落入 `hardKillBlue` 且难以单点替换；
@@ -90,8 +103,8 @@ public final class LotteryAdjustPrompt {
 
             【调优规则】
             一、单式号码组调整（对每一组，写入 adjustedTickets）
-            1. 红球比对：将 6 个红球与特征报告比对奇偶比、大小比、质合比、012路比、
-               跨度、和值区间、三区比、尾数、连号、邻狐传等，并计算冷热结构：
+            1. 红球比对：先按 `featureForecast` 校验奇偶/大小/质合/012路/跨度/和值/和尾/三区/区个数，
+               再比对连号、邻狐传，并计算冷热结构：
                - 冷热档位直接取自报告 `coldHotAnalysis.redHotBalls/redWarmBalls/redColdBalls`，
                  不得自行按频次表估算；
                - 热（在 redHotBalls 中）、温（在 redWarmBalls 中）、冷（在 redColdBalls 中）。
@@ -100,7 +113,8 @@ public final class LotteryAdjustPrompt {
                - 理想单式冷热：热2-3、温2-3、冷1-2。
                另检号段：一区(1-11)/二区(12-22)/三区(23-33) 不得出现「某区 0 个」或「某区≥4」；
                连号：最长连号长度≤2，且至多 1 组 2 连号（禁止 1,2,3 这类 3 连团）。
-               【和值/跨度硬校验】6 红球和值须 ∈ [90,130]、跨度（最大−最小）须 ∈ [16,28]；
+               【形态硬校验】须落入 `featureForecast` 各维 value 或 alternatives（含蓝球四维）；
+               【和值/跨度硬校验】优先 featureForecast.sumRange / span，缺失时和值 ∈ [90,130]、跨度 ∈ [16,28]；
                【奇偶/质合硬校验】6 红球奇数个数须 ≤ 5、质数个数须 ≤ 4
                （质数取 2,3,5,7,11,13,17,19,23,29,31，1 视为合数）；
                超出范围时按下方替换规则调整至合规。
@@ -128,6 +142,9 @@ public final class LotteryAdjustPrompt {
                极端整组重调时 redReplacements 应包含全部 6 组 from→to（原号→新号）。
             3. 蓝球比对与替换：蓝球 1-16。冷热档位直接取自报告
                `coldHotAnalysis.blueHotBalls/blueWarmBalls/blueColdBalls`，不得自行按频次表估算。
+               - 【蓝球形态硬校验】若 `featureForecast` 含 `blueOddEven` / `blueBigSmall` /
+                 `blueBigSmallOddEven` / `blueRatio012`，单式蓝球须落入对应 value 或 alternatives；
+                 与杀号冲突时优先杀号，其次形态，再次冷热。
                - 过热蓝球（在 blueHotBalls 中）→ 优先换为同路或邻区的温蓝球；basis 注明「蓝球冷热均衡」。
                - 极冷蓝球（在 blueColdBalls 中）→ 可换温号，但最终复式阶段仍须保留冷/温分散。
                - 若报告显示蓝球「狐」占比高，单式蓝球优先选相对上期的狐号或温号，
@@ -144,10 +161,10 @@ public final class LotteryAdjustPrompt {
             2. 基于「本组 adjustedRedBalls / adjustedBlueBall」扩展，须同时满足：
                【红球 7-10 个】
                - 须包含本组全部 6 个调整后红球，再补 1-4 个号；
-               - 冷热（取自 coldHotAnalysis）：热:温:冷 ≈ 3:3:2 或 4:3:2（热号≤4，冷号≥2）；禁止补号全为超热胆码；
+               - 冷热（取自 coldHotAnalysis）：热:温:冷 ≈ 3:3:2 或 4:3:2（热号≤4，冷号≥2）；禁止补号全为超热号；
                - 分区：一区/二区/三区 每区至少 2 个；
                - 连号：最长连号≤2，2 连号组数≤2；禁止出现 3 连及以上；
-               - 和值/跨度：6 红球子集（任取 6 个）的和值 ∈ [90,130]、跨度 ∈ [16,28]；
+               - 和值/跨度：优先落入 featureForecast.sumRange / span；缺失时 6 红球子集和值 ∈ [90,130]、跨度 ∈ [16,28]；
                - 奇偶/质合：6 红球子集（任取 6 个）的奇数个数 ≤ 5、质数个数 ≤ 4
                  （质数取 2,3,5,7,11,13,17,19,23,29,31，1 视为合数）；
                - 相对报告最近一期（邻狐传）：重号≤2；至少保留 2 个明确狐号（与上期既不重复也不相邻）。
@@ -162,12 +179,13 @@ public final class LotteryAdjustPrompt {
             三、最终可购买复式（必填 finalComplexTicket，全响应仅此一组）
             1. 综合特征报告 + 各组调整结果/单组复式，凝练成【唯一】一套最终购买复式；
                不要与某一组 complexTicket 简单等同。
-               可吸收多组「共性温号/结构共识」，但不得把报告 Top5 红胆或 Top4 热蓝作为复式主体；
+               可吸收多组「共性温号/结构共识」，但不得把报告超热红球或 Top4 热蓝作为复式主体；
                超热号入选总数红球≤3、蓝球≤2。
             2. 红球 7-10、蓝球 2-5，互异升序，且必须同时满足：
-               - 形态：奇偶、大小、三区比、和值、跨度落在报告高频或次高频区间附近；
-               - 三区比预测：优先落在 `predictedThreeZoneRatio.candidates` 中概率较高的形态；
-               - 和值/跨度硬约束：6 红球子集（任取 6 个）的和值 ∈ [90,130]、跨度 ∈ [16,28]；
+               - 形态：须落入 `featureForecast`（红球奇偶/大小/质合/012路/跨度/和值/和尾/三区/区个数，
+                 以及蓝球奇偶/大小/大小奇偶/012路）；
+               - 三区比预测：与 featureForecast.threeZone 一致时优先；否则参考 `predictedThreeZoneRatio.candidates`；
+               - 和值/跨度硬约束：优先 featureForecast；缺失时 6 红球子集和值 ∈ [90,130]、跨度 ∈ [16,28]；
                - 奇偶/质合硬约束：6 红球子集（任取 6 个）的奇数个数 ≤ 5、质数个数 ≤ 4
                  （质数取 2,3,5,7,11,13,17,19,23,29,31，1 视为合数）；
                - 冷热（取自 coldHotAnalysis）：红球热≤4、温≥2、冷≥2；蓝球热≤2，且含≥1 温、≥1 冷；
@@ -198,8 +216,8 @@ public final class LotteryAdjustPrompt {
             本组任务是「从零生成」，不是对已有号码调优；请严格输出与调优模式相同的 JSON Schema。
 
             【核心原则】
-            1. 特征报告用于约束形态（奇偶、大小、质合、012路、跨度、和值、三区、连号类型等），
-               不得把报告 Top 胆码/热号直接当作「必出号码表」整池搬入。
+            1. 下一期形态以报告 `featureForecast` 为准（value 为主推，alternatives 为备选）。
+               历史直方图只作背景，不得把高频号当作「必出号码表」整池搬入（已取消胆码）。
             2. 热号仅作候选池；选号主体必须冷热分散、三区分散，并防范热号集体回冷。
             3. 所有选号须可核验：冷热档位、分区、连号、邻狐传均需满足硬性约束。
             4. 【杀号硬约束】若报告中存在 `killNumbers` 字段：
@@ -212,22 +230,34 @@ public final class LotteryAdjustPrompt {
                  `blueHotBalls` / `blueWarmBalls` / `blueColdBalls` 为蓝球热/温/冷号清单；
                - 须直接使用上述清单判定每个候选号码的冷热档位，**不得**再自行从频次表推断冷热；
                - 若 `coldHotAnalysis` 为 null，则按报告频次表自行估算冷热。
-            6. 【红球和值与跨度硬约束】所有红球输出（adjustedRedBalls、complexTicket.redBalls、
-               finalComplexTicket.redBalls、finalSingleTickets.redBalls）必须同时满足：
-               - 和值（6 个红球之和）∈ [90, 130]；
-               - 跨度（最大红球 − 最小红球）∈ [16, 28]。
+            6. 【红球和值与跨度硬约束】所有红球输出必须同时满足：
+               - 若 `featureForecast.span` / `sumRange` 有值：跨度、和值须落入其 value（精确值或闭区间），
+                 冲突时可用 alternatives；
+               - 仅当上述字段缺失时回退：和值 ∈ [90, 130]、跨度 ∈ [16, 28]。
                任一条件不满足即视为违规，须在输出前自行调整号码至合规。
             7. 【红球奇偶与质合上限硬约束】所有红球输出（adjustedRedBalls、complexTicket.redBalls、
                finalComplexTicket.redBalls、finalSingleTickets.redBalls）必须同时满足：
                - 奇数个数 ≤ 5（禁止 6 个红球全为奇数，即禁止 6:0 奇偶比）；
                - 质数个数 ≤ 4（质数取 2,3,5,7,11,13,17,19,23,29,31，1 视为合数；禁止 ≥5 个质数）。
                任一条件不满足即视为违规，须在输出前自行调整号码至合规。
-            8. 【三区比预测软约束】若报告存在 `predictedThreeZoneRatio` 字段：
+            8. 【形态推算硬约束】若报告存在 `featureForecast` 字段：
+               - 各维 `value` 为下一期主推形态（精确值如 "3:3"、"21"，或区间如 "20-24"、"97-102"）；
+               - 单式 6 红的奇偶比、大小比、质合比、012路比、三区比须等于对应 value，
+                 或落在 alternatives 中；跨度/和值/和尾/区个数按精确值或闭区间校验；
+               - 三区比必须与 zone1Count / zone2Count / zone3Count 自洽；
+               - 蓝球：若存在 `blueOddEven` / `blueBigSmall` / `blueBigSmallOddEven` / `blueRatio012`，
+                 单式蓝球须同时落入对应 value 或 alternatives。
+                 口径：1-8 小、9-16 大；奇偶按 n%2；大小奇偶为 小奇/小偶/大奇/大偶；
+                 012路按 n%3（0路=3,6,9,12,15；1路=1,4,7,10,13,16；2路=2,5,8,11,14）；
+               - 不得用历史最高频直方图覆盖 featureForecast；
+               - 若 `featureForecast` 为 null，则按报告直方图高频/次高频形态选号。
+            9. 【三区比预测软约束】若报告存在 `predictedThreeZoneRatio` 字段：
                - `candidates` 为下一期 Top-K 候选三区比及概率，`lastRatio` 为最近一期实际三区比；
                - 各组单式/复式的三区比应尽量落在 Top 候选之中（概率越高越优先）；
                - 不得强行追求概率最高的单一形态而违反其他硬约束；
+               - 若与 `featureForecast.threeZone` 冲突，以 featureForecast 为准；
                - 若 `predictedThreeZoneRatio` 为 null，则按报告 `threeZoneRatio` 历史高频形态选号。
-            9. 【趋势均线补充约束】若报告存在 `trendAnalysis` 字段：
+            10. 【趋势均线补充约束】若报告存在 `trendAnalysis` 字段：
                - `risingRedBalls` / `risingBlueBalls` 为指数均线多头排列的号码（整体趋势向上，
                  遗漏减少、号码趋热），在选号和补号时**优先**从这些号码中补充；
                - `fallingRedBalls` / `fallingBlueBalls` 为指数均线空头排列的号码（整体趋势向下，
@@ -235,7 +265,7 @@ public final class LotteryAdjustPrompt {
                - 补号优先级：趋势上升号码 > 趋势平稳号码 > 趋势下降号码；
                - 不得违反杀号/冷热/和值/跨度等硬约束，趋势仅作为补号倾向性参考；
                - 若 `trendAnalysis` 为 null，则忽略本条约束。
-            10. 【组间差异】{count} 组方案须互有差异（至少红球或蓝球不同），可分别侧重不同形态假设
+            11. 【组间差异】{count} 组方案须互有差异（至少红球或蓝球不同），可分别侧重不同形态假设
                （如热温延续 / 温冷回补 / 分区均衡等），禁止 {count} 组完全相同。
 
             【特征分析报告】
@@ -251,9 +281,11 @@ public final class LotteryAdjustPrompt {
                - 冷热（取自 coldHotAnalysis）：理想热2-3、温2-3、冷1-2；热号≤3、冷号≤2；
                - 分区：一区(1-11)/二区(12-22)/三区(23-33) 不得出现「某区 0 个」或「某区≥4」；
                - 连号：最长连号长度≤2，且至多 1 组 2 连号；
-               - 和值 ∈ [90,130]、跨度 ∈ [16,28]；
+               - 和值/跨度优先落入 featureForecast；缺失时和值 ∈ [90,130]、跨度 ∈ [16,28]；
                - 奇数个数 ≤ 5、质数个数 ≤ 4（质数取 2,3,5,7,11,13,17,19,23,29,31，1 视为合数）；
-               - 三区比尽量落在 predictedThreeZoneRatio.candidates 中。
+               - 形态须落入 featureForecast；三区比与 zone1/2/3Count 自洽；
+                 蓝球须落入 featureForecast.blueOddEven / blueBigSmall / blueBigSmallOddEven / blueRatio012
+                 （若这些字段存在）。
             5. id 可用 "R1"/"R2"/...；reason 说明本组形态假设与选号依据（150 字内）。
 
             二、单组复式（每组必填 complexTicket，与单式一一对应）
@@ -261,10 +293,10 @@ public final class LotteryAdjustPrompt {
             2. 基于「本组 adjustedRedBalls / adjustedBlueBall」扩展，须同时满足：
                【红球 7-10 个】
                - 须包含本组全部 6 个推荐红球，再补 1-4 个号；
-               - 冷热（取自 coldHotAnalysis）：热:温:冷 ≈ 3:3:2 或 4:3:2（热号≤4，冷号≥2）；禁止补号全为超热胆码；
+               - 冷热（取自 coldHotAnalysis）：热:温:冷 ≈ 3:3:2 或 4:3:2（热号≤4，冷号≥2）；禁止补号全为超热号；
                - 分区：一区/二区/三区 每区至少 2 个；
                - 连号：最长连号≤2，2 连号组数≤2；禁止出现 3 连及以上；
-               - 和值/跨度：6 红球子集（任取 6 个）的和值 ∈ [90,130]、跨度 ∈ [16,28]；
+               - 和值/跨度：优先落入 featureForecast.sumRange / span；缺失时 6 红球子集和值 ∈ [90,130]、跨度 ∈ [16,28]；
                - 奇偶/质合：6 红球子集（任取 6 个）的奇数个数 ≤ 5、质数个数 ≤ 4
                  （质数取 2,3,5,7,11,13,17,19,23,29,31，1 视为合数）；
                - 相对报告最近一期（邻狐传）：重号≤2；至少保留 2 个明确狐号（与上期既不重复也不相邻）。
@@ -280,9 +312,10 @@ public final class LotteryAdjustPrompt {
             1. 综合特征报告 + 各组推荐结果/单组复式，凝练成【唯一】一套最终购买复式；
                不要与某一组 complexTicket 简单等同；超热号入选总数红球≤3、蓝球≤2。
             2. 红球 7-10、蓝球 2-5，互异升序，且必须同时满足：
-               - 形态：奇偶、大小、三区比、和值、跨度落在报告高频或次高频区间附近；
-               - 三区比预测：优先落在 `predictedThreeZoneRatio.candidates` 中概率较高的形态；
-               - 和值/跨度硬约束：6 红球子集（任取 6 个）的和值 ∈ [90,130]、跨度 ∈ [16,28]；
+               - 形态：须落入 `featureForecast`（红球奇偶/大小/质合/012路/跨度/和值/和尾/三区/区个数，
+                 以及蓝球奇偶/大小/大小奇偶/012路）；
+               - 三区比预测：与 featureForecast.threeZone 一致时优先；否则参考 `predictedThreeZoneRatio.candidates`；
+               - 和值/跨度硬约束：优先 featureForecast；缺失时 6 红球子集和值 ∈ [90,130]、跨度 ∈ [16,28]；
                - 奇偶/质合硬约束：6 红球子集（任取 6 个）的奇数个数 ≤ 5、质数个数 ≤ 4
                  （质数取 2,3,5,7,11,13,17,19,23,29,31，1 视为合数）；
                - 冷热（取自 coldHotAnalysis）：红球热≤4、温≥2、冷≥2；蓝球热≤2，且含≥1 温、≥1 冷；

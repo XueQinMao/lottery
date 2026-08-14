@@ -1,9 +1,10 @@
 "use client";
 
 import type {
-  BankerCandidate,
   ColdHotAnalysis,
   CountMap,
+  FeatureForecast,
+  FeatureForecastItem,
   KillNumberResult,
   LotteryAnalysisResp,
   ThreeZoneRatioPredict,
@@ -221,6 +222,67 @@ function ThreeZoneSection({ data }: { data?: ThreeZoneRatioPredict }) {
   );
 }
 
+function FeatureForecastSection({ data }: { data?: FeatureForecast }) {
+  if (!data) return null;
+  const rows: { label: string; item?: FeatureForecastItem }[] = [
+    { label: "奇偶比", item: data.oddEven },
+    { label: "大小比", item: data.bigSmall },
+    { label: "质合比", item: data.primeComposite },
+    { label: "012路比", item: data.ratio012 },
+    { label: "跨度", item: data.span },
+    { label: "和值区间", item: data.sumRange },
+    { label: "和值尾数", item: data.sumTail },
+    { label: "三区比", item: data.threeZone },
+    { label: "一区个数", item: data.zone1Count },
+    { label: "二区个数", item: data.zone2Count },
+    { label: "三区个数", item: data.zone3Count },
+    { label: "蓝球奇偶", item: data.blueOddEven },
+    { label: "蓝球大小", item: data.blueBigSmall },
+    { label: "蓝球大小奇偶", item: data.blueBigSmallOddEven },
+    { label: "蓝球012路", item: data.blueRatio012 },
+  ].filter((r) => r.item?.value);
+  if (rows.length === 0 && !data.basis) return null;
+  return (
+    <section className="section">
+      <h2>形态推算</h2>
+      {data.basis && <p className="basis">{data.basis}</p>}
+      {rows.length > 0 && (
+        <div className="chart-container">
+          <div className="chart-title">
+            <span>下一期目标值 / 区间</span>
+          </div>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>形态</th>
+                  <th>主推</th>
+                  <th>备选</th>
+                  <th>置信度</th>
+                  <th>依据</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.label}>
+                    <td>{r.label}</td>
+                    <td>
+                      <strong>{r.item?.value}</strong>
+                    </td>
+                    <td>{r.item?.alternatives?.join("、") || "-"}</td>
+                    <td>{pct(r.item?.confidence)}</td>
+                    <td className="reason-cell">{r.item?.reason || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function TrendSection({ data }: { data?: TrendAnalysis }) {
   if (!data) return null;
   return (
@@ -260,43 +322,6 @@ function TrendSection({ data }: { data?: TrendAnalysis }) {
   );
 }
 
-function BankerList({
-  title,
-  items,
-}: {
-  title: string;
-  items?: BankerCandidate[];
-}) {
-  if (!hasItems(items)) return null;
-  return (
-    <div className="chart-container">
-      <div className="chart-title">
-        <span>{title}</span>
-      </div>
-      <div className="table-wrap">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>号码</th>
-              <th>次数</th>
-              <th>频率</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.slice(0, 10).map((it) => (
-              <tr key={`${title}-${it.balls}`}>
-                <td>{it.balls}</td>
-                <td>{it.count}</td>
-                <td>{pct(it.frequency)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
 export default function AnalysisReport({ data }: { data: LotteryAnalysisResp }) {
   const ov = data.sampleOverview;
   const hasDist =
@@ -306,6 +331,7 @@ export default function AnalysisReport({ data }: { data: LotteryAnalysisResp }) 
     hasMap(data.ratio012) ||
     hasMap(data.span) ||
     hasMap(data.sumRange) ||
+    hasMap(data.sumTail) ||
     hasMap(data.threeZoneRatio);
 
   return (
@@ -356,6 +382,7 @@ export default function AnalysisReport({ data }: { data: LotteryAnalysisResp }) 
 
       <KillSection data={data.killNumbers} />
       <ColdHotSection data={data.coldHotAnalysis} />
+      <FeatureForecastSection data={data.featureForecast} />
       <ThreeZoneSection data={data.predictedThreeZoneRatio} />
       <TrendSection data={data.trendAnalysis} />
 
@@ -368,19 +395,11 @@ export default function AnalysisReport({ data }: { data: LotteryAnalysisResp }) 
           <CountBars title="012路比" map={data.ratio012} />
           <CountBars title="跨度" map={data.span} />
           <CountBars title="和值区间" map={data.sumRange} />
+          <CountBars title="和值尾数" map={data.sumTail} />
           <CountBars title="三区比" map={data.threeZoneRatio} />
           <CountBars title="一区个数" map={data.zone1Count} />
           <CountBars title="二区个数" map={data.zone2Count} />
           <CountBars title="三区个数" map={data.zone3Count} />
-        </section>
-      )}
-
-      {data.banker && (
-        <section className="section">
-          <h2>胆码</h2>
-          <BankerList title="1胆" items={data.banker.oneBanker} />
-          <BankerList title="2胆" items={data.banker.twoBanker} />
-          <BankerList title="3胆" items={data.banker.threeBanker} />
         </section>
       )}
     </>

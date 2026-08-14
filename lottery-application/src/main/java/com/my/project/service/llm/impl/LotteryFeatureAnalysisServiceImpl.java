@@ -4,6 +4,7 @@ import cn.hutool.core.io.FileUtil;
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson2.JSON;
 import com.my.project.llm.bo.*;
+import com.my.project.llm.bo.FeatureForecastBo.FeatureForecastItem;
 import com.my.project.llm.service.ILotteryAdjustService;
 import com.my.project.llm.service.ILotteryAnalysisService;
 import com.my.project.persistence.entity.HistoryRecord;
@@ -20,8 +21,10 @@ import com.my.project.service.llm.pojo.dto.LLmAdjustDto;
 import com.my.project.service.predict.pojo.vo.PredictCacheVo;
 import com.my.project.service.predict.IPredictCacheService;
 import com.my.project.service.selection.ISmartSelectService;
-import com.my.project.service.support.FileUtils;
 import com.my.project.service.support.LotteryFeatureStatsUtils;
+import com.my.project.service.support.LotteryFeatureTrendUtils;
+import com.my.project.service.support.LotteryFeatureTrendUtils.FeatureKind;
+import com.my.project.service.support.LotteryMorphologySnapshotUtils;
 import com.my.project.service.support.LotteryTrendUtils;
 import com.my.project.service.support.LotteryTrendUtils.TrendAnalysisResult;
 import lombok.RequiredArgsConstructor;
@@ -35,23 +38,23 @@ import org.springframework.util.Assert;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 /**
  * LotteryFeatureAnalysisServiceImpl
  *
- * <p>从历史开奖记录中取最近 N 期一等奖号码（双色球即 6 红球 + 1 蓝球），
- * 组装为 {@link LotteryAnalysisReqBo} 后调用 {@link ILotteryAnalysisService}。 * <p>可选启用杀号功能：在 LLM 分析完成后，由
- * {@link IKillNumberService} 基于原始样本 * 计算杀号清单并挂到 {@link LotteryAnalysisRespBo#getKillNumbers()}。开关由请求级 *
- * {@link LotteryAnalysisReqBo#getEnableKillNumber()} 覆盖全局配置 * {@code lottery.llm.kill-number.enabled}。 * * <p>同时由
- * {@link IColdHotAnalysisService} 基于原始样本统计冷热温号码分类， * 挂到 {@link LotteryAnalysisRespBo#getColdHotAnalysis()}，供调优阶段 LLM
- * 直接引用。 * * <p>同时由 {@link IThreeZoneRatioPredictService} 基于「频率先验 + 马尔可夫转移」 * 混合模型预测下一期三区比，挂到
- * {@link LotteryAnalysisRespBo#getPredictedThreeZoneRatio()}。
+ * <p>{@code lottery.llm.analysis.engine=java}：主线程用 Java 统计直方图（含连号、邻狐传、蓝球），
+ * 形态目标取样本最高频。
+ * <p>{@code lottery.llm.analysis.engine=llm}：主线程仍用 Java 统计直方图 / 连号 / 邻狐传 / 蓝球 /
+ * 杀号 / 冷热温 / 三区预测 / 趋势；红球 11 个 + 蓝球 4 个形态各开一条线程向 LLM 要下一期值或区间。
  *
  * @author 刘强
- * @version 2026/07/21 20:36
+ * @version 2026/08/14
  **/
 @Slf4j
 @Service
@@ -71,6 +74,14 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
 
     private static final String CACHE_KEY_PREFIX = "feature.analysis.cache";
 
+    private static final Executor FEATURE_LLM_EXECUTOR = Executors.newFixedThreadPool(
+        FeatureKind.values().length,
+        r -> {
+            Thread t = new Thread(r, "feature-llm");
+            t.setDaemon(true);
+            return t;
+        });
+
     private final LotteryModelConfig lotteryModelConfig;
 
     @Value("${lottery.llm.analysis.engine:java}")
@@ -86,7 +97,7 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
             throw new IllegalStateException("无可用的历史开奖记录用于分析");
         }
         String period = latest.getFirst().getPeriod();
-        String cacheKey = CACHE_KEY_PREFIX + period + sampleSize;
+        String cacheKey = CACHE_KEY_PREFIX + period + sampleSize + analysisEngine;
         //        String cacheKey = CACHE_KEY_PREFIX + period + UUID.randomUUID().toString();
         var respBo = multiLevelCache.get(cacheKey, k -> doAnalyze(count));
         Assert.notNull(respBo, "特征数据获取异常，请稍后重试");
@@ -94,63 +105,166 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
     }
 
     private LotteryAnalysisRespBo doAnalyze(int sampleSize) {
-        log.info("拉取最近 {} 期历史开奖记录用于 LLM 分析", sampleSize);
+        log.info("拉取最近 {} 期历史开奖记录用于特征分析", sampleSize);
         ReentrantLock lock = lockMap.computeIfAbsent(String.valueOf(sampleSize), k -> new ReentrantLock());
         if (!lock.tryLock()) {
             log.warn("Key [" + sampleSize + "] 已被其他线程锁定，立即返回");
             return null;
         }
-        var records = historyRecordService.getLatestRecords(sampleSize);
-        if (CollectionUtils.isEmpty(records)) {
-            throw new IllegalStateException("无可用的历史开奖记录用于分析");
+        try {
+            var records = historyRecordService.getLatestRecords(sampleSize);
+            if (CollectionUtils.isEmpty(records)) {
+                throw new IllegalStateException("无可用的历史开奖记录用于分析");
+            }
+            var latestRecord = records.getFirst();
+            var drawRecords = records.subList(0, Math.min(30, sampleSize)).stream().map(this::toDrawRecord)
+                .collect(Collectors.toList());
+            var reqBo = LotteryAnalysisReqBo.builder().sampleSize(drawRecords.size()).enableKillNumber(true)
+                .defaultKillNumbers(toDrawRecord(latestRecord)).records(drawRecords).build();
+
+            LotteryAnalysisRespBo result = LotteryFeatureStatsUtils.analyze(reqBo.getRecords());
+            if (useLlmEngine()) {
+                result.setFeatureForecast(forecastFeaturesByLlm(records));
+            } else {
+                result.setFeatureForecast(forecastFeaturesByJava(result));
+            }
+            result.setKillNumbers(Boolean.TRUE.equals(reqBo.getEnableKillNumber())
+                ? killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers())
+                : null);
+            result.setColdHotAnalysis(coldHotAnalysisService.calculate(reqBo.getRecords()));
+            result.setPredictedThreeZoneRatio(threeZoneRatioPredictService.predict(reqBo.getRecords()));
+            result.setTrendAnalysis(calcTrendAnalysis(drawRecords));
+
+            var calculate10 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 2);
+            var calculate12 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 4);
+            var calculate14 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 6);
+            var calculate16 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 8);
+            var calculate18 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 10);
+            var calculate20 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 12);
+
+            FileUtil.writeString(JSON.toJSONString(calculate10),
+                new File(lotteryModelConfig.getPath() + "/kill/kill_" + latestRecord.getPeriod() + "_10.json"),
+                StandardCharsets.UTF_8);
+            FileUtil.writeString(JSON.toJSONString(calculate12),
+                new File(lotteryModelConfig.getPath() + "/kill/kill_" + latestRecord.getPeriod() + "_12.json"),
+                StandardCharsets.UTF_8);
+            FileUtil.writeString(JSON.toJSONString(calculate14),
+                new File(lotteryModelConfig.getPath() + "/kill/kill_" + latestRecord.getPeriod() + "_14.json"),
+                StandardCharsets.UTF_8);
+            FileUtil.writeString(JSON.toJSONString(calculate16),
+                new File(lotteryModelConfig.getPath() + "/kill/kill_" + latestRecord.getPeriod() + "_16.json"),
+                StandardCharsets.UTF_8);
+            FileUtil.writeString(JSON.toJSONString(calculate18),
+                new File(lotteryModelConfig.getPath() + "/kill/kill_" + latestRecord.getPeriod() + "_18.json"),
+                StandardCharsets.UTF_8);
+            FileUtil.writeString(JSON.toJSONString(calculate20),
+                new File(lotteryModelConfig.getPath() + "/kill/kill_" + latestRecord.getPeriod() + "_20.json"),
+                StandardCharsets.UTF_8);
+            return result;
+        } finally {
+            lock.unlock();
         }
-        // 最近一期（降序首条）用于默认杀号
-        var latestRecord = records.getFirst();
-        // 下游杀号遗漏 / 三区比马尔可夫均要求期号升序（最旧→最新）
-        var chronological = new ArrayList<>(records);
-        Collections.reverse(chronological);
-        var drawRecords = records.subList(0, Math.min(30, sampleSize)).stream().map(this::toDrawRecord)
-            .collect(Collectors.toList());
-        var reqBo = LotteryAnalysisReqBo.builder().sampleSize(drawRecords.size()).enableKillNumber(true)
-            .defaultKillNumbers(toDrawRecord(latestRecord)).records(drawRecords).build();
-        var result = Objects.equals(analysisEngine, "java") ? LotteryFeatureStatsUtils.analyze(reqBo.getRecords())
-            : lotteryAnalysisService.analyze(reqBo);
-        result.setKillNumbers(reqBo.getEnableKillNumber() ? killNumberService.calculate(reqBo.getRecords(),
-            reqBo.getDefaultKillNumbers()) : null);
-        result.setColdHotAnalysis(coldHotAnalysisService.calculate(reqBo.getRecords()));
-        result.setPredictedThreeZoneRatio(threeZoneRatioPredictService.predict(reqBo.getRecords()));
-        result.setTrendAnalysis(calcTrendAnalysis(drawRecords));
+    }
 
-        //统计一下杀8 10 12 14 16 18 20 的成功率
-        var calculate10 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 2);
-        var calculate12 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 4);
-        var calculate14 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 6);
-        var calculate16 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 8);
-        var calculate18 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 10);
-        var calculate20 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 12);
+    private boolean useLlmEngine() {
+        return "llm".equalsIgnoreCase(analysisEngine);
+    }
 
-        FileUtil.writeString(JSON.toJSONString(calculate10),
-            new File(lotteryModelConfig.getPath() + "/kill/kill_" + latestRecord.getPeriod() + "_10.json"),
-            StandardCharsets.UTF_8);
-        FileUtil.writeString(JSON.toJSONString(calculate12),
-            new File(lotteryModelConfig.getPath() + "/kill/kill_" + latestRecord.getPeriod() + "_12.json"),
-            StandardCharsets.UTF_8);
-        FileUtil.writeString(JSON.toJSONString(calculate14),
-            new File(lotteryModelConfig.getPath() + "/kill/kill_" + latestRecord.getPeriod() + "_14.json"),
-            StandardCharsets.UTF_8);
-        FileUtil.writeString(JSON.toJSONString(calculate16),
-            new File(lotteryModelConfig.getPath() + "/kill/kill_" + latestRecord.getPeriod() + "_16.json"),
-            StandardCharsets.UTF_8);
-        FileUtil.writeString(JSON.toJSONString(calculate18),
-            new File(lotteryModelConfig.getPath() + "/kill/kill_" + latestRecord.getPeriod() + "_18.json"),
-            StandardCharsets.UTF_8);
-        FileUtil.writeString(JSON.toJSONString(calculate20),
-            new File(lotteryModelConfig.getPath() + "/kill/kill_" + latestRecord.getPeriod() + "_20.json"),
-            StandardCharsets.UTF_8);
-        return result;
+    /**
+     * 红球 11 个 + 蓝球 4 个形态各开一条线程请求 LLM；指数数据走形态指数页同一套 analyzePatternTrend。
+     */
+    private FeatureForecastBo forecastFeaturesByLlm(List<HistoryRecord> latestNewestFirst) {
+        EnumMap<FeatureKind, CompletableFuture<FeatureForecastItem>> futures = new EnumMap<>(FeatureKind.class);
+        for (FeatureKind kind : FeatureKind.values()) {
+            futures.put(kind, CompletableFuture.supplyAsync(
+                () -> forecastOneFeature(kind, latestNewestFirst), FEATURE_LLM_EXECUTOR));
         }
+        CompletableFuture.allOf(futures.values().toArray(CompletableFuture[]::new)).join();
 
+        FeatureForecastBo forecast = new FeatureForecastBo();
+        forecast.setOddEven(joinItem(futures, FeatureKind.ODD_EVEN));
+        forecast.setBigSmall(joinItem(futures, FeatureKind.BIG_SMALL));
+        forecast.setPrimeComposite(joinItem(futures, FeatureKind.PRIME_COMP));
+        forecast.setRatio012(joinItem(futures, FeatureKind.RATIO_012));
+        forecast.setSpan(joinItem(futures, FeatureKind.SPAN));
+        forecast.setSumRange(joinItem(futures, FeatureKind.SUM_RANGE));
+        forecast.setSumTail(joinItem(futures, FeatureKind.SUM_TAIL));
+        forecast.setThreeZone(joinItem(futures, FeatureKind.THREE_ZONE));
+        forecast.setZone1Count(joinItem(futures, FeatureKind.ZONE1_COUNT));
+        forecast.setZone2Count(joinItem(futures, FeatureKind.ZONE2_COUNT));
+        forecast.setZone3Count(joinItem(futures, FeatureKind.ZONE3_COUNT));
+        forecast.setBlueOddEven(joinItem(futures, FeatureKind.BLUE_ODD_EVEN));
+        forecast.setBlueBigSmall(joinItem(futures, FeatureKind.BLUE_BIG_SMALL));
+        forecast.setBlueBigSmallOddEven(joinItem(futures, FeatureKind.BLUE_BIG_SMALL_ODD_EVEN));
+        forecast.setBlueRatio012(joinItem(futures, FeatureKind.BLUE_RATIO_012));
+        forecast.setBasis("红球与蓝球形态指数与形态指数页同源，由独立线程向 LLM 推算下一期值或区间");
+        return forecast;
+    }
 
+    private FeatureForecastItem forecastOneFeature(FeatureKind kind, List<HistoryRecord> latestNewestFirst) {
+        try {
+            HistoryRecord newest = latestNewestFirst.getFirst();
+            List<Integer> lastReds = Arrays.asList(
+                newest.getNum1(), newest.getNum2(), newest.getNum3(),
+                newest.getNum4(), newest.getNum5(), newest.getNum6());
+            String lastRatio = LotteryFeatureTrendUtils.extract(lastReds, newest.getSpecial(), kind);
+            var trend = historyRecordService.analyzePatternTrend(
+                kind.getCode(), lastRatio, latestNewestFirst);
+            String snapshot = LotteryMorphologySnapshotUtils.fromPatternTrend(trend);
+            return lotteryAnalysisService.forecastOne(kind.getLabel(), kind.valueHint(), snapshot);
+        } catch (Exception e) {
+            log.warn("形态 [{}] 推算失败", kind.getLabel(), e);
+            return null;
+        }
+    }
+
+    private static FeatureForecastItem joinItem(EnumMap<FeatureKind, CompletableFuture<FeatureForecastItem>> futures,
+        FeatureKind kind) {
+        return futures.get(kind).join();
+    }
+
+    /** Java 引擎：形态目标取样本最高频，不请求 LLM。 */
+    private FeatureForecastBo forecastFeaturesByJava(LotteryAnalysisRespBo stats) {
+        FeatureForecastBo forecast = new FeatureForecastBo();
+        forecast.setOddEven(topItem(stats.getOddEvenRatio()));
+        forecast.setBigSmall(topItem(stats.getBigSmallRatio()));
+        forecast.setPrimeComposite(topItem(stats.getPrimeCompositeRatio()));
+        forecast.setRatio012(topItem(stats.getRatio012()));
+        forecast.setSpan(topItem(stats.getSpan()));
+        forecast.setSumRange(topItem(stats.getSumRange()));
+        forecast.setSumTail(topItem(stats.getSumTail()));
+        forecast.setThreeZone(topItem(stats.getThreeZoneRatio()));
+        forecast.setZone1Count(topItem(stats.getZone1Count()));
+        forecast.setZone2Count(topItem(stats.getZone2Count()));
+        forecast.setZone3Count(topItem(stats.getZone3Count()));
+        var blue = stats.getBlue();
+        if (blue != null) {
+            forecast.setBlueOddEven(topItem(blue.getOddEvenRatio()));
+            forecast.setBlueBigSmall(topItem(blue.getBigSmallRatio()));
+            forecast.setBlueBigSmallOddEven(topItem(blue.getBigSmallOddEvenRatio()));
+            forecast.setBlueRatio012(topItem(blue.getRatio012()));
+        }
+        forecast.setBasis("Java 统计：红球与蓝球各形态取样本最高频作为下一期参考");
+        return forecast;
+    }
+
+    private static FeatureForecastItem topItem(Map<String, Integer> map) {
+        if (map == null || map.isEmpty()) {
+            return null;
+        }
+        String value = map.entrySet().stream()
+            .max(Comparator.comparingInt(Map.Entry::getValue))
+            .map(Map.Entry::getKey)
+            .orElse(null);
+        if (value == null) {
+            return null;
+        }
+        FeatureForecastItem item = new FeatureForecastItem();
+        item.setValue(value);
+        item.setConfidence(1.0);
+        item.setReason("样本最高频");
+        return item;
+    }
 
     /**
      * 计算红球 1-33 和蓝球 1-16 的趋势均线排列。

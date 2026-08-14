@@ -1,25 +1,30 @@
 package com.my.project.llm.service;
 
+import com.my.project.llm.bo.FeatureForecastBo.FeatureForecastItem;
 import com.my.project.llm.bo.LotteryAnalysisReqBo;
 import com.my.project.llm.bo.LotteryAnalysisRespBo;
-
-import java.util.List;
 
 /**
  * ILotteryAnalysisService
  *
- * <p>号码特征分析服务。直方图可由 Java 本地统计或 LLM 生成（见 {@code lottery.llm.analysis.engine}）。
+ * <p>直方图由 Java 本地统计；LLM 按单个形态推算下一期值或区间。
  *
  * @author 刘强
- * @version 2026/08/13
+ * @version 2026/08/14
  **/
 public interface ILotteryAnalysisService {
 
     /**
-     * 基于最近的中奖号码样本进行多维度特征分析。
-     *
-     * @param reqBo 分析请求（包含样本号码）
-     * @return 结构化分析结果
+     * 已不再用于直方图。直方图由 {@code LotteryFeatureStatsUtils} 计算。
      */
     LotteryAnalysisRespBo analyze(LotteryAnalysisReqBo reqBo);
+
+    /**
+     * 基于单个形态快照推算下一期值或区间。
+     *
+     * @param featureLabel 形态中文名，如「奇偶比」
+     * @param valueHint    取值格式说明
+     * @param snapshotJson 该形态的 Java 快照
+     */
+    FeatureForecastItem forecastOne(String featureLabel, String valueHint, String snapshotJson);
 }

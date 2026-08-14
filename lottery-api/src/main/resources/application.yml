@@ -32,8 +32,8 @@ mybatis-plus:
 lottery:
   llm:
     analysis:
-      # java：本地统计直方图（默认）；llm：仍走 DeepSeek
-      engine: java
+      # java：主线程 Java 统计直方图，形态取最高频；llm：11 个形态各开线程向 LLM 要下一期值/区间
+      engine: llm
       model: deepseek-chat
       temperature: 0.9
   model:

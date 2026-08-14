@@ -15,7 +15,13 @@ import com.my.project.service.history.pojo.dto.HistoryRecordDto;
 import com.my.project.service.history.pojo.client.SsqWebsiteClientDto;
 import com.my.project.service.history.pojo.client.WebsiteDrawItemDto;
 import com.my.project.service.history.pojo.vo.FeatureStatsVo;
+import com.my.project.service.history.pojo.vo.PatternTrendVo;
 import com.my.project.service.history.pojo.vo.TrendAnalysisVo;
+import com.my.project.service.support.LotteryFeatureTrendUtils;
+import com.my.project.service.support.LotteryFeatureTrendUtils.FeatureKind;
+import com.my.project.service.support.LotteryPatternTrendUtils;
+import com.my.project.service.support.LotteryPatternTrendUtils.PatternTrendResult;
+import com.my.project.service.support.LotteryPatternTrendUtils.PatternTrendStats;
 import com.my.project.service.support.LotteryTrendUtils;
 import com.my.project.service.support.LotteryTrendUtils.TrendAnalysisResult;
 import com.my.project.service.support.LotteryTrendUtils.TrendStats;
@@ -245,6 +251,104 @@ public class HistoryRecordServiceImpl implements IHistoryRecordService {
             .blueOddEvenLabels(blueOddEvenLabels)
             .blueOddAvg(avg(blueOddFlags))
             .build();
+    }
+
+    @Override
+    public PatternTrendVo analyzePatternTrend(String feature, String ratio, int sampleSize) {
+        int size = Math.max(sampleSize, 1);
+        List<HistoryRecord> latest = getLatestRecords(size);
+        if (CollectionUtil.isEmpty(latest)) {
+            throw new IllegalStateException("无可用的历史开奖记录");
+        }
+        return analyzePatternTrend(feature, ratio, latest);
+    }
+
+    @Override
+    public PatternTrendVo analyzePatternTrend(String feature, String ratio, List<HistoryRecord> latestNewestFirst) {
+        FeatureKind kind = FeatureKind.fromCode(feature);
+        String normalizedRatio = LotteryFeatureTrendUtils.normalizeBucket(kind, ratio);
+        if (CollectionUtil.isEmpty(latestNewestFirst)) {
+            throw new IllegalStateException("无可用的历史开奖记录");
+        }
+        List<HistoryRecord> chronological = new ArrayList<>(latestNewestFirst);
+        Collections.reverse(chronological);
+
+        List<String> periods = new ArrayList<>(chronological.size());
+        List<Boolean> hits = new ArrayList<>(chronological.size());
+        List<String> actuals = new ArrayList<>(chronological.size());
+        Map<String, Integer> ratioCounts = new LinkedHashMap<>();
+        for (String bucket : LotteryFeatureTrendUtils.buckets(kind)) {
+            ratioCounts.put(bucket, 0);
+        }
+        for (HistoryRecord r : chronological) {
+            periods.add(r.getPeriod());
+            String actual = LotteryFeatureTrendUtils.extract(redsOf(r), r.getSpecial(), kind);
+            actuals.add(actual);
+            hits.add(normalizedRatio.equals(actual));
+            ratioCounts.merge(actual, 1, Integer::sum);
+        }
+        double p = LotteryFeatureTrendUtils.theoreticalProb(kind, normalizedRatio);
+        PatternTrendResult result = LotteryPatternTrendUtils.analyze(hits, p);
+        PatternTrendStats stats = result.getStats();
+
+        HistoryRecord last = chronological.get(chronological.size() - 1);
+        String lastRatio = actuals.get(actuals.size() - 1);
+
+        List<PatternTrendVo.RatioOption> options = new ArrayList<>();
+        for (String optRatio : LotteryFeatureTrendUtils.buckets(kind)) {
+            int optHits = ratioCounts.getOrDefault(optRatio, 0);
+            double optP = LotteryFeatureTrendUtils.theoreticalProb(kind, optRatio);
+            double optTheory = chronological.size() * optP;
+            List<Boolean> optHitFlags = new ArrayList<>(actuals.size());
+            for (String actual : actuals) {
+                optHitFlags.add(optRatio.equals(actual));
+            }
+            PatternTrendStats optStats = LotteryPatternTrendUtils.analyze(optHitFlags, optP).getStats();
+            options.add(PatternTrendVo.RatioOption.builder()
+                .ratio(optRatio)
+                .hitCount(optHits)
+                .theoreticalProb(LotteryPatternTrendUtils.round6(optP))
+                .theoreticalHits(LotteryPatternTrendUtils.round2(optTheory))
+                .index(LotteryPatternTrendUtils.round2(optHits - optTheory))
+                .currentOmission(optStats.getCurrentOmission())
+                .avgOmission(optStats.getAvgOmission())
+                .maxOmission(optStats.getMaxOmission())
+                .build());
+        }
+
+        return PatternTrendVo.builder()
+            .feature(kind.getCode())
+            .featureLabel(kind.getLabel())
+            .ratio(normalizedRatio)
+            .periods(periods)
+            .hits(result.getHits())
+            .omissions(result.getOmissions())
+            .indexValues(result.getIndexValues())
+            .latestPeriod(last.getPeriod())
+            .latestWinning(formatWinning(last))
+            .latestRatio(lastRatio)
+            .stats(PatternTrendVo.Stats.builder()
+                .maxOmission(stats.getMaxOmission())
+                .avgOmission(stats.getAvgOmission())
+                .currentOmission(stats.getCurrentOmission())
+                .hitCount(stats.getHitCount())
+                .totalPeriods(stats.getTotalPeriods())
+                .theoreticalProb(stats.getTheoreticalProb())
+                .theoreticalHits(stats.getTheoreticalHits())
+                .index(stats.getIndex())
+                .build())
+            .ratioOptions(options)
+            .build();
+    }
+
+    private static List<Integer> redsOf(HistoryRecord r) {
+        return Arrays.asList(r.getNum1(), r.getNum2(), r.getNum3(), r.getNum4(), r.getNum5(), r.getNum6());
+    }
+
+    private static String formatWinning(HistoryRecord r) {
+        return String.format("%02d %02d %02d %02d %02d %02d + %02d",
+            r.getNum1(), r.getNum2(), r.getNum3(), r.getNum4(), r.getNum5(), r.getNum6(),
+            r.getSpecial());
     }
 
     private static double avg(List<Integer> values) {

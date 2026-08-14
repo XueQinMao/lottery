@@ -31,7 +31,7 @@ public class LotteryAdjustReqBo {
 
     /**
      * 特征分析报告 JSON 字符串。
-     * <p>由 {@code ILotteryAnalysisService.analyze} 产出，直接透传给大模型作为调优 / 推荐依据。
+     * <p>由 Java 直方图 + LLM 形态推算产出，直接透传给大模型作为调优 / 推荐依据。
      */
     private String analysisReportJson;
 

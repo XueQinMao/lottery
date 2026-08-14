@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 export default function SiteNav() {
   const pathname = usePathname();
   const onTrend = pathname === "/";
+  const onPattern = pathname.startsWith("/pattern-trend");
   const onFeature = pathname.startsWith("/feature-stats");
   const onLlm = pathname.startsWith("/llm-analysis");
 
@@ -13,6 +14,12 @@ export default function SiteNav() {
     <nav className="site-nav">
       <Link href="/" className={`site-nav-link ${onTrend ? "active" : ""}`}>
         遗漏趋势
+      </Link>
+      <Link
+        href="/pattern-trend"
+        className={`site-nav-link ${onPattern ? "active" : ""}`}
+      >
+        形态指数
       </Link>
       <Link
         href="/feature-stats"

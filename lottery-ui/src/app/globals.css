@@ -75,6 +75,7 @@ body {
   gap: 8px;
   justify-content: center;
   margin: 10px 0;
+  flex-wrap: wrap;
 }
 
 .type-tab {
@@ -89,6 +90,11 @@ body {
   text-decoration: none;
   display: inline-flex;
   align-items: center;
+}
+
+.ratio-tabs .type-tab {
+  padding: 4px 10px;
+  font-size: 12px;
 }
 
 .type-tab.active {
@@ -247,6 +253,14 @@ body {
   height: 3px;
   border-radius: 2px;
   display: inline-block;
+}
+
+.legend .dot.dashed {
+  height: 0;
+  border-top: 2px dashed currentColor;
+  background: transparent !important;
+  color: inherit;
+  width: 14px;
 }
 
 .info-bar {

@@ -8,10 +8,10 @@ import java.util.Map;
 /**
  * LotteryAnalysisRespBo
  *
- * <p>大模型对最近 100 组一等奖号码的多维度特征分析结果。
+ * <p>Java 直方图 + LLM 形态推算的多维度特征分析结果。
  * <ul>
- *     <li>红球：奇偶比、大小比、质合比、012路比、跨度、和值区间、和值位数、
- *         三区比、一区个数、二区个数、三区个数、胆码、尾数、连号、邻狐传</li>
+ *     <li>红球：奇偶比、大小比、质合比、012路比、跨度、和值区间、和值尾数、和值位数、
+ *         三区比、一区个数、二区个数、三区个数、尾数、连号、邻狐传</li>
  *     <li>蓝球：奇偶比、大小比、质合比、012路比、尾数、尾数大小、尾数奇偶、
  *         尾数012路、分区（四分区）、邻狐传、任意N码</li>
  * </ul>
@@ -42,10 +42,13 @@ public class LotteryAnalysisRespBo {
     /** 跨度分布：最大红球 - 最小红球，key 为跨度值，value 为出现次数 */
     private Map<String, Integer> span;
 
-    /** 和值区间分布：key 形如 "100-109"，value 为出现次数 */
+    /** 和值区间分布：key 形如 "97-102"，value 为出现次数 */
     private Map<String, Integer> sumRange;
 
-    /** 和值位数分布：key 为和值的首位数字（1-3），value 为出现次数 */
+    /** 和值尾数分布：key 为和值个位 0-9，value 为出现次数 */
+    private Map<String, Integer> sumTail;
+
+    /** 和值位数分布：key 为和值的位数（2位/3位），value 为出现次数 */
     private Map<String, Integer> sumDigit;
 
     /** 三区比：一区(1-11)、二区(12-22)、三区(23-33) 的比例分布，key 形如 "2:2:2" */
@@ -59,9 +62,6 @@ public class LotteryAnalysisRespBo {
 
     /** 三区个数分布 */
     private Map<String, Integer> zone3Count;
-
-    /** 胆码分析：1胆、2胆、3胆 */
-    private BankerAnalysis banker;
 
     /** 尾数分析 */
     private TailAnalysis tail;
@@ -109,6 +109,14 @@ public class LotteryAnalysisRespBo {
      */
     private TrendAnalysisBo trendAnalysis;
 
+    /**
+     * 形态推算（可选）。
+     * <p>红球：奇偶/大小/质合/012路/跨度/和值区间/和尾/三区/分区个数；
+     * 蓝球：奇偶/大小/大小奇偶/012路。指数快照与形态指数页同源，
+     * LLM 或 Java 最高频推算下一期值。调优与推荐须优先落入这些目标。
+     */
+    private FeatureForecastBo featureForecast;
+
     /** 综合结论与选号建议 */
     private String conclusion;
 
@@ -124,26 +132,6 @@ public class LotteryAnalysisRespBo {
         private String avgOddEven;
         /** 平均大小比 */
         private String avgBigSmall;
-    }
-
-    @Data
-    public static class BankerAnalysis {
-        /** 1胆：出现频率最高的 1 个红球 */
-        private List<BankerCandidate> oneBanker;
-        /** 2胆：出现频率最高的 2 个红球组合 */
-        private List<BankerCandidate> twoBanker;
-        /** 3胆：出现频率最高的 3 个红球组合 */
-        private List<BankerCandidate> threeBanker;
-    }
-
-    @Data
-    public static class BankerCandidate {
-        /** 胆码号码（1胆为单个数字，2胆/3胆为逗号分隔） */
-        private String balls;
-        /** 出现次数 */
-        private Integer count;
-        /** 出现频率（0-1） */
-        private Double frequency;
     }
 
     @Data
@@ -209,6 +197,8 @@ public class LotteryAnalysisRespBo {
         private Map<String, Integer> primeCompositeRatio;
         /** 012路比：按蓝球除以 3 的余数分类，出现次数分布 */
         private Map<String, Integer> ratio012;
+        /** 大小奇偶：小奇/小偶/大奇/大偶 出现次数分布 */
+        private Map<String, Integer> bigSmallOddEvenRatio;
         /** 尾数分布：key 为尾数(0-6)，value 为出现次数 */
         private Map<String, Integer> tailValue;
         /** 尾数大小分布：尾数 0-4 为小，5-9 为大 */
