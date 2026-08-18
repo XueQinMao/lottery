@@ -77,7 +77,7 @@ function KillSection({ data }: { data?: KillNumberResult }) {
   const redBalls = data.hardKillRed?.map((it) => it.ball).filter((n) => n != null);
   const blueBalls = data.hardKillBlue?.map((it) => it.ball).filter((n) => n != null);
   return (
-    <section className="section">
+    <section className="section report-card">
       <h2>杀号清单</h2>
       {data.basis && <p className="basis">{data.basis}</p>}
       <div className="chart-container">
@@ -111,7 +111,7 @@ function KillSection({ data }: { data?: KillNumberResult }) {
 function ColdHotSection({ data }: { data?: ColdHotAnalysis }) {
   if (!data) return null;
   return (
-    <section className="section">
+    <section className="section report-card">
       <h2>冷热温号码</h2>
       {data.basis && <p className="basis">{data.basis}</p>}
       <div className="chart-container">
@@ -160,7 +160,7 @@ function ThreeZoneSection({ data }: { data?: ThreeZoneRatioPredict }) {
   if (!data) return null;
   const candidates = data.candidates;
   return (
-    <section className="section">
+    <section className="section report-card report-span-full">
       <h2>三区比预测</h2>
       {data.lastRatio && (
         <p className="basis">
@@ -205,73 +205,114 @@ function ThreeZoneSection({ data }: { data?: ThreeZoneRatioPredict }) {
   );
 }
 
-function FeatureForecastSection({ data }: { data?: FeatureForecast }) {
-  if (!data) return null;
-  const rows: { label: string; item?: FeatureForecastItem }[] = [
-    { label: "奇偶比", item: data.oddEven },
-    { label: "大小比", item: data.bigSmall },
-    { label: "质合比", item: data.primeComposite },
-    { label: "012路比", item: data.ratio012 },
-    { label: "跨度", item: data.span },
-    { label: "和值区间", item: data.sumRange },
-    { label: "和值尾数", item: data.sumTail },
-    { label: "三区比", item: data.threeZone },
-    { label: "一区个数", item: data.zone1Count },
-    { label: "二区个数", item: data.zone2Count },
-    { label: "三区个数", item: data.zone3Count },
-    { label: "蓝球奇偶", item: data.blueOddEven },
-    { label: "蓝球大小", item: data.blueBigSmall },
-    { label: "蓝球大小奇偶", item: data.blueBigSmallOddEven },
-    { label: "蓝球012路", item: data.blueRatio012 },
-  ].filter((r) => r.item?.value);
-  if (rows.length === 0 && !data.basis) return null;
+const RED_FORECAST_ROWS: { key: keyof FeatureForecast; label: string }[] = [
+  { key: "oddEven", label: "奇偶比" },
+  { key: "bigSmall", label: "大小比" },
+  { key: "primeComposite", label: "质合比" },
+  { key: "ratio012", label: "012路比" },
+  { key: "span", label: "跨度" },
+  { key: "sumRange", label: "和值区间" },
+  { key: "sumTail", label: "和值尾数" },
+  { key: "threeZone", label: "三区比" },
+  { key: "zone1Count", label: "一区个数" },
+  { key: "zone2Count", label: "二区个数" },
+  { key: "zone3Count", label: "三区个数" },
+];
+
+const BLUE_FORECAST_ROWS: { key: keyof FeatureForecast; label: string }[] = [
+  { key: "blueOddEven", label: "蓝球奇偶" },
+  { key: "blueBigSmall", label: "蓝球大小" },
+  { key: "blueBigSmallOddEven", label: "蓝球大小奇偶" },
+  { key: "blueRatio012", label: "蓝球012路" },
+];
+
+function gapTrendClass(t?: string) {
+  switch (t) {
+    case "heating":
+      return "trend-badge trend-heating";
+    case "cooling":
+      return "trend-badge trend-cooling";
+    case "stable":
+      return "trend-badge trend-stable";
+    default:
+      return "trend-badge";
+  }
+}
+
+function etaLabel(item?: FeatureForecastItem) {
+  if (item?.eta == null) return "-";
+  if (item.dueWindow || item.eta <= 0) return "窗口内";
+  return `约 ${item.eta} 期后`;
+}
+
+function ForecastTable({
+  title,
+  rows,
+  data,
+}: {
+  title: string;
+  rows: { key: keyof FeatureForecast; label: string }[];
+  data?: FeatureForecast;
+}) {
   return (
-    <section className="section">
-      <h2>形态推算</h2>
-      {data.basis && <p className="basis">{data.basis}</p>}
-      {rows.length > 0 && (
-        <div className="chart-container">
-          <div className="chart-title">
-            <span>下一期目标值 / 区间</span>
-          </div>
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>形态</th>
-                  <th>主推</th>
-                  <th>备选</th>
-                  <th>间隔趋势</th>
-                  <th>eta</th>
-                  <th>窗口</th>
-                  <th>置信度</th>
-                  <th>依据</th>
+    <div className="chart-container">
+      <div className="chart-title">
+        <span>{title}</span>
+      </div>
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>形态</th>
+              <th>主推</th>
+              <th>备选</th>
+              <th>冷热</th>
+              <th>当前遗漏</th>
+              <th>预计接入</th>
+              <th>置信度</th>
+              <th>依据</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const item = data?.[r.key] as FeatureForecastItem | undefined;
+              return (
+                <tr key={r.key}>
+                  <td>{r.label}</td>
+                  <td>
+                    <strong>{item?.value || "-"}</strong>
+                  </td>
+                  <td>{item?.alternatives?.join("、") || "-"}</td>
+                  <td>
+                    <span className={gapTrendClass(item?.gapTrend)}>
+                      {gapTrendLabel(item?.gapTrend)}
+                    </span>
+                  </td>
+                  <td>{item?.currentOmission ?? "-"}</td>
+                  <td>{etaLabel(item)}</td>
+                  <td>{pct(item?.confidence)}</td>
+                  <td className="reason-cell">{item?.reason || "-"}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.label}>
-                    <td>{r.label}</td>
-                    <td>
-                      <strong>{r.item?.value}</strong>
-                    </td>
-                    <td>{r.item?.alternatives?.join("、") || "-"}</td>
-                    <td>{gapTrendLabel(r.item?.gapTrend)}</td>
-                    <td>
-                      {r.item?.eta != null
-                        ? `${r.item.eta}（Ĝ=${r.item.predictedGap ?? "-"}）`
-                        : "-"}
-                    </td>
-                    <td>{r.item?.dueWindow == null ? "-" : r.item.dueWindow ? "是" : "否"}</td>
-                    <td>{pct(r.item?.confidence)}</td>
-                    <td className="reason-cell">{r.item?.reason || "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function FeatureForecastSection({ data }: { data?: FeatureForecast }) {
+  return (
+    <section className="section report-card">
+      <h2>形态推算</h2>
+      {data?.basis ? (
+        <p className="basis">{data.basis}</p>
+      ) : (
+        <p className="basis">下一期红球 / 蓝球形态目标（主推值、冷热与接入时机）。</p>
       )}
+      <ForecastTable title="红球 11 维" rows={RED_FORECAST_ROWS} data={data} />
+      <ForecastTable title="蓝球 4 维" rows={BLUE_FORECAST_ROWS} data={data} />
     </section>
   );
 }
@@ -279,7 +320,7 @@ function FeatureForecastSection({ data }: { data?: FeatureForecast }) {
 function TrendSection({ data }: { data?: TrendAnalysis }) {
   if (!data) return null;
   return (
-    <section className="section">
+    <section className="section report-card report-span-full">
       <h2>趋势均线（堆叠 + 斜率）</h2>
       <div className="chart-container">
         <div className="chart-title">
@@ -333,12 +374,14 @@ function TrendSection({ data }: { data?: TrendAnalysis }) {
 
 export default function AnalysisReport({ data }: { data: LotteryAnalysisResp }) {
   return (
-    <>
+    <div className="report-bento">
+      <div className="report-span-full">
+        <FeatureForecastSection data={data.featureForecast} />
+      </div>
       <KillSection data={data.killNumbers} />
       <ColdHotSection data={data.coldHotAnalysis} />
-      <FeatureForecastSection data={data.featureForecast} />
       <ThreeZoneSection data={data.predictedThreeZoneRatio} />
       <TrendSection data={data.trendAnalysis} />
-    </>
+    </div>
   );
 }

@@ -86,71 +86,65 @@ export default function PatternTrendPage() {
   const ratios = data?.ratioOptions.map((o) => o.ratio) ?? [ratio];
 
   return (
-    <main className="page">
-      <header className="header">
-        <h1>形态遗漏与超额指数</h1>
-        <p className="sub">
-          指数 = 实际出现次数 − 理论出现次数（n × p）；命中 +(1-p)，未命中 −p。
-          截止期号空=最新。
-        </p>
-      </header>
+    <div className="page">
+      <div className="filter-card">
+        <SampleQueryBar
+          sampleSize={sampleSize}
+          onSampleSizeChange={setSampleSize}
+          endPeriod={endPeriod}
+          onEndPeriodChange={setEndPeriod}
+          onApply={() => setAppliedPeriod(endPeriod.trim())}
+        />
 
-      <SampleQueryBar
-        sampleSize={sampleSize}
-        onSampleSizeChange={setSampleSize}
-        endPeriod={endPeriod}
-        onEndPeriodChange={setEndPeriod}
-        onApply={() => setAppliedPeriod(endPeriod.trim())}
-      />
-
-      <div className="type-tabs">
-        <button
-          type="button"
-          className={`type-tab ${ballGroup === "red" ? "active" : ""}`}
-          onClick={() => switchGroup("red")}
-        >
-          红球
-        </button>
-        <button
-          type="button"
-          className={`type-tab ${ballGroup === "blue" ? "active" : ""}`}
-          onClick={() => switchGroup("blue")}
-        >
-          蓝球
-        </button>
-      </div>
-
-      <div className="type-tabs">
-        {features.map((item) => (
+        <div className="type-tabs">
           <button
-            key={item.code}
             type="button"
-            className={`type-tab ${feature === item.code ? "active" : ""}`}
-            onClick={() => {
-              setFeature(item.code);
-              setRatio(item.defaultRatio);
-            }}
+            className={`type-tab ${ballGroup === "red" ? "active" : ""}`}
+            onClick={() => switchGroup("red")}
           >
-            {item.label}
+            红球
           </button>
-        ))}
-      </div>
+          <button
+            type="button"
+            className={`type-tab ${ballGroup === "blue" ? "active" : ""}`}
+            onClick={() => switchGroup("blue")}
+          >
+            蓝球
+          </button>
+        </div>
 
-      <div className="type-tabs ratio-tabs">
-        {ratios.map((r) => {
-          const opt = data?.ratioOptions.find((o) => o.ratio === r);
-          return (
+        <div className="type-tabs">
+          {features.map((item) => (
             <button
-              key={r}
+              key={item.code}
               type="button"
-              className={`type-tab ${ratio === r ? "active" : ""}`}
-              onClick={() => setRatio(r)}
+              className={`type-tab ${feature === item.code ? "active" : ""}`}
+              onClick={() => {
+                setFeature(item.code);
+                setRatio(item.defaultRatio);
+              }}
             >
-              {ratioButtonLabel(feature, r)}
-              {opt != null ? ` (${opt.hitCount})` : ""}
+              {item.label}
             </button>
-          );
-        })}
+          ))}
+        </div>
+
+        <div className="type-tabs ratio-tabs">
+          {ratios.map((r) => {
+            const opt = data?.ratioOptions.find((o) => o.ratio === r);
+            return (
+              <button
+                key={r}
+                type="button"
+                className={`type-tab ${ratio === r ? "active" : ""}`}
+                onClick={() => setRatio(r)}
+              >
+                {ratioButtonLabel(feature, r)}
+                {opt != null ? ` (${opt.hitCount})` : ""}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {loading && <div className="status">加载中...</div>}
@@ -167,6 +161,6 @@ export default function PatternTrendPage() {
           ? `　当前 p=${(data.stats.theoreticalProb * 100).toFixed(2)}%　样本 ${data.stats.totalPeriods} 期`
           : ""}
       </div>
-    </main>
+    </div>
   );
 }

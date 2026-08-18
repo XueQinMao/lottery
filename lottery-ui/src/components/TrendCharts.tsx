@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as echarts from "echarts";
 import type { EChartsType } from "echarts";
+import { CHART_THEME } from "@/lib/chartTheme";
 import type { TrendAnalysisVo } from "@/types/trend";
 
 interface Props {
@@ -44,29 +45,29 @@ export default function TrendCharts({ data }: Props) {
         backgroundColor: "transparent",
         tooltip: {
           trigger: "axis",
-          backgroundColor: "#161b22",
-          borderColor: "#30363d",
-          textStyle: { color: "#e6edf3" },
+          backgroundColor: CHART_THEME.tooltipBg,
+          borderColor: CHART_THEME.tooltipBorder,
+          textStyle: { color: CHART_THEME.text },
         },
         grid: { left: 50, right: 60, top: 20, bottom: 40 },
         xAxis: {
           type: "category",
           data: periods,
           axisLabel: {
-            color: "#8b949e",
+            color: CHART_THEME.muted,
             interval: 9,
             fontSize: 10,
             rotate: 45,
           },
-          axisLine: { lineStyle: { color: "#30363d" } },
+          axisLine: { lineStyle: { color: CHART_THEME.axis } },
         },
         yAxis: {
           type: "value",
           name: "遗漏",
-          nameTextStyle: { color: "#8b949e" },
-          axisLabel: { color: "#8b949e" },
-          splitLine: { lineStyle: { color: "#21262d" } },
-          axisLine: { lineStyle: { color: "#30363d" } },
+          nameTextStyle: { color: CHART_THEME.muted },
+          axisLabel: { color: CHART_THEME.muted },
+          splitLine: { lineStyle: { color: CHART_THEME.split } },
+          axisLine: { lineStyle: { color: CHART_THEME.axis } },
         },
         series: [
           {
@@ -108,7 +109,7 @@ export default function TrendCharts({ data }: Props) {
               show: true,
               position: "top",
               fontSize: 9,
-              color: "#8b949e",
+              color: CHART_THEME.muted,
               formatter: (p: { value: number }) =>
                 p.value === 0 ? "" : String(p.value),
             },
@@ -123,9 +124,9 @@ export default function TrendCharts({ data }: Props) {
         backgroundColor: "transparent",
         tooltip: {
           trigger: "axis",
-          backgroundColor: "#161b22",
-          borderColor: "#30363d",
-          textStyle: { color: "#e6edf3" },
+          backgroundColor: CHART_THEME.tooltipBg,
+          borderColor: CHART_THEME.tooltipBorder,
+          textStyle: { color: CHART_THEME.text },
           formatter: (params: Array<{ dataIndex: number; axisValue: string }>) => {
             const idx = params[0].dataIndex;
             return (
@@ -140,21 +141,21 @@ export default function TrendCharts({ data }: Props) {
           type: "category",
           data: periods,
           axisLabel: {
-            color: "#8b949e",
+            color: CHART_THEME.muted,
             interval: 9,
             fontSize: 10,
             rotate: 45,
           },
-          axisLine: { lineStyle: { color: "#30363d" } },
+          axisLine: { lineStyle: { color: CHART_THEME.axis } },
         },
         yAxis: {
           type: "value",
           name: "指数",
-          nameTextStyle: { color: "#8b949e" },
+          nameTextStyle: { color: CHART_THEME.muted },
           min: -1,
-          axisLabel: { color: "#8b949e" },
-          splitLine: { lineStyle: { color: "#21262d" } },
-          axisLine: { lineStyle: { color: "#30363d" } },
+          axisLabel: { color: CHART_THEME.muted },
+          splitLine: { lineStyle: { color: CHART_THEME.split } },
+          axisLine: { lineStyle: { color: CHART_THEME.axis } },
         },
         series: [
           {
@@ -261,6 +262,7 @@ export default function TrendCharts({ data }: Props) {
         </div>
       </div>
 
+      <div className="charts-grid">
       <div className="chart-container">
         <div className="chart-title">
           <span>{titlePrefix}遗漏走势</span>
@@ -292,6 +294,7 @@ export default function TrendCharts({ data }: Props) {
             指数均值线
           </span>
         </div>
+      </div>
       </div>
     </>
   );

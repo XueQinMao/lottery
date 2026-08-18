@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import FeatureLineChart from "@/components/FeatureLineChart";
 import FeatureStatsToolbar from "@/components/FeatureStatsToolbar";
+import SampleQueryBar from "@/components/SampleQueryBar";
 import { fetchFeatureStats } from "@/lib/api";
 import type { FeatureStatsVo } from "@/types/feature-stats";
 
@@ -37,26 +38,22 @@ export default function FeatureRatioPage() {
   }, [load, sampleSize, appliedPeriod]);
 
   return (
-    <main className="page">
-      <header className="header">
-        <h1>质合比 / 奇偶比统计</h1>
-        <p className="sub">
-          质合比仅红球；奇偶比红蓝分开。Y 轴为个数（蓝球 1=奇 / 0=偶），虚线为均值。截止期号空=最新。
-        </p>
-      </header>
-
-      <FeatureStatsToolbar
-        sampleSize={sampleSize}
-        onSampleSizeChange={setSampleSize}
-        endPeriod={endPeriod}
-        onEndPeriodChange={setEndPeriod}
-        onApplyPeriod={() => setAppliedPeriod(endPeriod.trim())}
-      />
+    <div className="page">
+      <div className="filter-card">
+        <FeatureStatsToolbar />
+        <SampleQueryBar
+          sampleSize={sampleSize}
+          onSampleSizeChange={setSampleSize}
+          endPeriod={endPeriod}
+          onEndPeriodChange={setEndPeriod}
+          onApply={() => setAppliedPeriod(endPeriod.trim())}
+        />
+      </div>
 
       {loading && <div className="status">加载中...</div>}
       {error && <div className="status error">{error}</div>}
       {!loading && !error && data && (
-        <>
+        <div className="charts-grid">
           <FeatureLineChart
             title="红球质合比（Y = 质数个数，提示中为 质:合）"
             yName="质数个数"
@@ -64,7 +61,7 @@ export default function FeatureRatioPage() {
             values={data.primeCounts}
             avg={data.primeAvg}
             labels={data.primeRatios}
-            lineColor="#a371f7"
+            lineColor="#8B5CF6"
             yMin={0}
             yMax={6}
             yInterval={1}
@@ -76,7 +73,7 @@ export default function FeatureRatioPage() {
             values={data.redOddCounts}
             avg={data.redOddAvg}
             labels={data.redOddEvenRatios}
-            lineColor="#f85149"
+            lineColor="#DC2626"
             yMin={0}
             yMax={6}
             yInterval={1}
@@ -88,14 +85,14 @@ export default function FeatureRatioPage() {
             values={data.blueOddFlags}
             avg={data.blueOddAvg}
             labels={data.blueOddEvenLabels}
-            lineColor="#58a6ff"
+            lineColor="#3B82F6"
             yMin={0}
             yMax={1}
             yInterval={1}
             yFormatter={blueOddLabel}
           />
-        </>
+        </div>
       )}
-    </main>
+    </div>
   );
 }

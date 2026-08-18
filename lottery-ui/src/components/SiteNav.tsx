@@ -2,37 +2,97 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import {
+  Brain,
+  ChartLine,
+  SidebarSimple,
+  SquaresFour,
+  Table,
+} from "@phosphor-icons/react";
 
-export default function SiteNav() {
+const NAV_ITEMS = [
+  {
+    href: "/",
+    label: "遗漏趋势",
+    match: (p: string) => p === "/",
+    Icon: ChartLine,
+  },
+  {
+    href: "/pattern-trend",
+    label: "形态指数",
+    match: (p: string) => p.startsWith("/pattern-trend"),
+    Icon: SquaresFour,
+  },
+  {
+    href: "/feature-stats",
+    label: "形态统计",
+    match: (p: string) => p.startsWith("/feature-stats"),
+    Icon: Table,
+  },
+  {
+    href: "/llm-analysis",
+    label: "LLM 分析",
+    match: (p: string) => p.startsWith("/llm-analysis"),
+    Icon: Brain,
+  },
+];
+
+interface Props {
+  collapsed: boolean;
+  onToggle: () => void;
+}
+
+export default function SiteNav({ collapsed, onToggle }: Props) {
   const pathname = usePathname();
-  const onTrend = pathname === "/";
-  const onPattern = pathname.startsWith("/pattern-trend");
-  const onFeature = pathname.startsWith("/feature-stats");
-  const onLlm = pathname.startsWith("/llm-analysis");
 
   return (
-    <nav className="site-nav">
-      <Link href="/" className={`site-nav-link ${onTrend ? "active" : ""}`}>
-        遗漏趋势
+    <nav id="site-nav" className="site-nav" aria-label="主导航">
+      <Link href="/" className="brand" title="双色球数据分析">
+        <span className="brand-mark" aria-hidden="true">
+          <span className="brand-dot red" />
+          <span className="brand-dot blue" />
+        </span>
+        <span className="brand-copy">
+          <strong>双色球</strong>
+          <span>数据分析</span>
+        </span>
       </Link>
-      <Link
-        href="/pattern-trend"
-        className={`site-nav-link ${onPattern ? "active" : ""}`}
+
+      <div className="site-nav-links">
+        {NAV_ITEMS.map(({ href, label, match, Icon }) => {
+          const active = match(pathname);
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={`site-nav-link ${active ? "active" : ""}`}
+              aria-current={active ? "page" : undefined}
+              title={collapsed ? label : undefined}
+            >
+              <Icon
+                size={20}
+                weight={active ? "fill" : "regular"}
+                aria-hidden="true"
+              />
+              <span>{label}</span>
+            </Link>
+          );
+        })}
+      </div>
+
+      <button
+        type="button"
+        className="nav-toggle"
+        onClick={onToggle}
+        aria-expanded={!collapsed}
+        aria-controls="site-nav"
+        title={collapsed ? "展开菜单" : "收起菜单"}
       >
-        形态指数
-      </Link>
-      <Link
-        href="/feature-stats"
-        className={`site-nav-link ${onFeature ? "active" : ""}`}
-      >
-        形态统计
-      </Link>
-      <Link
-        href="/llm-analysis"
-        className={`site-nav-link ${onLlm ? "active" : ""}`}
-      >
-        LLM 分析
-      </Link>
+        <SidebarSimple size={20} weight="regular" aria-hidden="true" />
+        <span className="nav-toggle-label">
+          {collapsed ? "展开菜单" : "收起菜单"}
+        </span>
+      </button>
     </nav>
   );
 }

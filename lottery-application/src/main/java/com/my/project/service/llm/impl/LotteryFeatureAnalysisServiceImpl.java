@@ -102,6 +102,17 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
         //        String cacheKey = CACHE_KEY_PREFIX + period + UUID.randomUUID().toString();
         var respBo = multiLevelCache.get(cacheKey, k -> doAnalyze(count));
         Assert.notNull(respBo, "特征数据获取异常，请稍后重试");
+        if (respBo.getFeatureForecast() == null) {
+            log.warn("缓存缺少 featureForecast，即时补算 key={}", cacheKey);
+            var records = historyRecordService.getLatestRecords(INTERVAL_FORECAST_MAX);
+            if (CollectionUtils.isNotEmpty(records)) {
+                var forecastRecords = records.stream().map(this::toDrawRecord).collect(Collectors.toList());
+                respBo.setFeatureForecast(useLlmEngine()
+                    ? forecastFeaturesByLlm(forecastRecords)
+                    : FeatureIntervalForecastUtils.forecast(forecastRecords));
+                multiLevelCache.put(cacheKey, respBo);
+            }
+        }
         return respBo;
     }
 

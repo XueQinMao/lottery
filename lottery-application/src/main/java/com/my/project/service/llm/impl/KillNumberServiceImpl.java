@@ -76,11 +76,12 @@ public class KillNumberServiceImpl implements IKillNumberService {
         Map<Integer, Double> blueScores = calculateBlueScores(chronological, blueOmission);
 
         int sampleSize = chronological.size();
-        List<KillItemBo> hardKillRed = pickTop(redScores, redOmission, sampleSize,
-            killNumberConfig.getMaxHardKillRed(), killNumberConfig.getHardThreshold(), Set.of(), true);
-        List<KillItemBo> hardKillBlue = pickTop(blueScores, blueOmission, sampleSize,
-            killNumberConfig.getMaxHardKillBlue(), killNumberConfig.getHardThreshold(), Set.of(), false);
-
+//        List<KillItemBo> hardKillRed = pickTop(redScores, redOmission, sampleSize,
+//            killNumberConfig.getMaxHardKillRed(), killNumberConfig.getHardThreshold(), Set.of(), true);
+//        List<KillItemBo> hardKillBlue = pickTop(blueScores, blueOmission, sampleSize,
+//            killNumberConfig.getMaxHardKillBlue(), killNumberConfig.getHardThreshold(), Set.of(), false);
+        List<KillItemBo> hardKillRed = new ArrayList<>();
+        List<KillItemBo> hardKillBlue = new ArrayList<>();
         // 趋势均线直接杀号：不参与加权融合，达标直接进硬杀清单（须用升序样本）
         Set<Integer> alreadyRed = ballsOf(hardKillRed);
         Set<Integer> alreadyBlue = ballsOf(hardKillBlue);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { CHART_THEME } from "@/lib/chartTheme";
 import * as echarts from "echarts";
 import type { EChartsType } from "echarts";
 
@@ -24,7 +25,7 @@ export default function FeatureLineChart({
   periods,
   values,
   avg,
-  lineColor = "#58a6ff",
+  lineColor = "#3B82F6",
   labels,
   yMin,
   yMax,
@@ -47,9 +48,9 @@ export default function FeatureLineChart({
         backgroundColor: "transparent",
         tooltip: {
           trigger: "axis",
-          backgroundColor: "#161b22",
-          borderColor: "#30363d",
-          textStyle: { color: "#e6edf3" },
+          backgroundColor: CHART_THEME.tooltipBg,
+          borderColor: CHART_THEME.tooltipBorder,
+          textStyle: { color: CHART_THEME.text },
           formatter: (
             params: Array<{ dataIndex: number; axisValue: string; value: number }>,
           ) => {
@@ -67,14 +68,14 @@ export default function FeatureLineChart({
           type: "category",
           data: periods,
           name: "期号",
-          nameTextStyle: { color: "#8b949e" },
+          nameTextStyle: { color: CHART_THEME.muted },
           axisLabel: {
-            color: "#8b949e",
+            color: CHART_THEME.muted,
             interval: Math.max(0, Math.floor(periods.length / 10) - 1),
             fontSize: 10,
             rotate: 45,
           },
-          axisLine: { lineStyle: { color: "#30363d" } },
+          axisLine: { lineStyle: { color: CHART_THEME.axis } },
         },
         yAxis: {
           type: "value",
@@ -82,13 +83,13 @@ export default function FeatureLineChart({
           min: yMin,
           max: yMax,
           interval: yInterval,
-          nameTextStyle: { color: "#8b949e" },
+          nameTextStyle: { color: CHART_THEME.muted },
           axisLabel: {
-            color: "#8b949e",
+            color: CHART_THEME.muted,
             ...(yFormatter ? { formatter: yFormatter } : {}),
           },
-          splitLine: { lineStyle: { color: "#21262d" } },
-          axisLine: { lineStyle: { color: "#30363d" } },
+          splitLine: { lineStyle: { color: CHART_THEME.split } },
+          axisLine: { lineStyle: { color: CHART_THEME.axis } },
         },
         series: [
           {

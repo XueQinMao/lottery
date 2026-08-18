@@ -32,27 +32,25 @@ export default function LlmAnalysisPage() {
   }, [load, sampleSize]);
 
   return (
-    <main className="page">
-      <header className="header">
-        <h1>LLM 特征分析</h1>
-      </header>
-
-      <div className="type-tabs">
-        {SAMPLE_OPTIONS.map((n) => (
-          <button
-            key={n}
-            type="button"
-            className={`type-tab ${sampleSize === n ? "active" : ""}`}
-            onClick={() => setSampleSize(n)}
-          >
-            近 {n} 期
-          </button>
-        ))}
+    <div className="page">
+      <div className="filter-card">
+        <div className="type-tabs">
+          {SAMPLE_OPTIONS.map((n) => (
+            <button
+              key={n}
+              type="button"
+              className={`type-tab ${sampleSize === n ? "active" : ""}`}
+              onClick={() => setSampleSize(n)}
+            >
+              近 {n} 期
+            </button>
+          ))}
+        </div>
       </div>
 
       {loading && <div className="status">分析中，请稍候...</div>}
       {error && <div className="status error">{error}</div>}
       {!loading && !error && data && <AnalysisReport data={data} />}
-    </main>
+    </div>
   );
 }

@@ -1,7 +1,7 @@
 package com.my.project.service.llm.cache;
 
 import cn.hutool.crypto.digest.DigestUtil;
-import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson2.JSON;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.RemovalCause;
@@ -110,6 +110,17 @@ public class LotteryAnalysisMultiLevelCache {
             }
             return result;
         });
+    }
+
+    /**
+     * 回写 L1 / L2（用于补全缺失字段后覆盖旧缓存）。
+     */
+    public void put(String key, LotteryAnalysisRespBo value) {
+        if (key == null || value == null) {
+            return;
+        }
+        memory.put(key, value);
+        writeToDisk(key, value);
     }
 
     /**

@@ -47,14 +47,14 @@ public class LotteryAnalysisServiceImpl implements ILotteryAnalysisService {
         System.out.println("hint:"+valueHint);
         System.out.println("snapshot:"+snapshotJson);
         System.out.println("format:"+ITEM_FORMAT);
-//        FeatureForecastItem result = lotteryChatClient.prompt()
-//            .user(u -> u.text(LotteryAnalysisPrompt.FORECAST_ONE_PROMPT)
-//                .param("label", featureLabel)
-//                .param("hint", valueHint)
-//                .param("snapshot", snapshotJson)
-//                .param("format", ITEM_FORMAT))
-//            .call()
-//            .entity(FeatureForecastItem.class);
+        FeatureForecastItem result = lotteryChatClient.prompt()
+            .user(u -> u.text(LotteryAnalysisPrompt.FORECAST_ONE_PROMPT)
+                .param("label", featureLabel)
+                .param("hint", valueHint)
+                .param("snapshot", snapshotJson)
+                .param("format", ITEM_FORMAT))
+            .call()
+            .entity(FeatureForecastItem.class);
         log.info("形态 [{}] 推算完成: {}", featureLabel, JSON.toJSONString(null));
         return null;
     }

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as echarts from "echarts";
 import type { EChartsType } from "echarts";
+import { CHART_THEME } from "@/lib/chartTheme";
 import type { PatternTrendVo } from "@/types/pattern-trend";
 
 interface Props {
@@ -57,9 +58,9 @@ export default function PatternTrendCharts({ data }: Props) {
         backgroundColor: "transparent",
         tooltip: {
           trigger: "axis",
-          backgroundColor: "#161b22",
-          borderColor: "#30363d",
-          textStyle: { color: "#e6edf3" },
+          backgroundColor: CHART_THEME.tooltipBg,
+          borderColor: CHART_THEME.tooltipBorder,
+          textStyle: { color: CHART_THEME.text },
           formatter: (
             params: Array<{ dataIndex: number; axisValue: string }>,
           ) => {
@@ -76,20 +77,20 @@ export default function PatternTrendCharts({ data }: Props) {
           type: "category",
           data: periods,
           axisLabel: {
-            color: "#8b949e",
+            color: CHART_THEME.muted,
             interval: 9,
             fontSize: 10,
             rotate: 45,
           },
-          axisLine: { lineStyle: { color: "#30363d" } },
+          axisLine: { lineStyle: { color: CHART_THEME.axis } },
         },
         yAxis: {
           type: "value",
           name: "遗漏",
-          nameTextStyle: { color: "#8b949e" },
-          axisLabel: { color: "#8b949e" },
-          splitLine: { lineStyle: { color: "#21262d" } },
-          axisLine: { lineStyle: { color: "#30363d" } },
+          nameTextStyle: { color: CHART_THEME.muted },
+          axisLabel: { color: CHART_THEME.muted },
+          splitLine: { lineStyle: { color: CHART_THEME.split } },
+          axisLine: { lineStyle: { color: CHART_THEME.axis } },
         },
         series: [
           {
@@ -131,7 +132,7 @@ export default function PatternTrendCharts({ data }: Props) {
               show: true,
               position: "top",
               fontSize: 9,
-              color: "#8b949e",
+              color: CHART_THEME.muted,
               formatter: (p: { value: number }) =>
                 p.value === 0 ? "" : String(p.value),
             },
@@ -157,9 +158,9 @@ export default function PatternTrendCharts({ data }: Props) {
         backgroundColor: "transparent",
         tooltip: {
           trigger: "axis",
-          backgroundColor: "#161b22",
-          borderColor: "#30363d",
-          textStyle: { color: "#e6edf3", fontSize: 12 },
+          backgroundColor: CHART_THEME.tooltipBg,
+          borderColor: CHART_THEME.tooltipBorder,
+          textStyle: { color: CHART_THEME.text, fontSize: 12 },
           padding: [10, 12],
           axisPointer: {
             type: "line",
@@ -196,13 +197,13 @@ export default function PatternTrendCharts({ data }: Props) {
           data: periods,
           boundaryGap: false,
           axisLabel: {
-            color: "#8b949e",
+            color: CHART_THEME.muted,
             interval: Math.max(0, Math.ceil(periods.length / 6) - 1),
             fontSize: 10,
             rotate: 0,
           },
           axisTick: { show: false },
-          axisLine: { lineStyle: { color: "#30363d" } },
+          axisLine: { lineStyle: { color: CHART_THEME.axis } },
           splitLine: { show: false },
         },
         yAxis: {
@@ -213,15 +214,15 @@ export default function PatternTrendCharts({ data }: Props) {
           splitNumber: 4,
           minInterval: span >= 2 ? 1 : 0.5,
           nameGap: 8,
-          nameTextStyle: { color: "#8b949e", fontSize: 11, padding: [0, 0, 0, 8] },
+          nameTextStyle: { color: CHART_THEME.muted, fontSize: 11, padding: [0, 0, 0, 8] },
           axisLabel: {
-            color: "#8b949e",
+            color: CHART_THEME.muted,
             fontSize: 10,
             formatter: (v: number) =>
               span >= 2 ? String(Math.round(v)) : v.toFixed(1),
           },
           splitLine: {
-            lineStyle: { color: "#21262d", type: "dashed", width: 1 },
+            lineStyle: { color: CHART_THEME.split, type: "dashed", width: 1 },
           },
           axisLine: { show: false },
           axisTick: { show: false },
@@ -259,7 +260,7 @@ export default function PatternTrendCharts({ data }: Props) {
                     position: "end",
                     fontSize: 11,
                     fontWeight: 600,
-                    backgroundColor: "#161b22",
+                    backgroundColor: CHART_THEME.tooltipBg,
                     padding: [2, 5],
                     borderRadius: 3,
                   },
@@ -322,7 +323,7 @@ export default function PatternTrendCharts({ data }: Props) {
             z: 5,
             itemStyle: {
               color: gold,
-              borderColor: "#0d1117",
+              borderColor: CHART_THEME.pageBg,
               borderWidth: 2,
               shadowBlur: 10,
               shadowColor: "rgba(210, 153, 34, 0.55)",
@@ -395,6 +396,7 @@ export default function PatternTrendCharts({ data }: Props) {
         </div>
       </div>
 
+      <div className="charts-grid">
       <div className="chart-container">
         <div className="chart-title">
           <span>{titlePrefix}遗漏走势</span>
@@ -426,6 +428,7 @@ export default function PatternTrendCharts({ data }: Props) {
             当前指数
           </span>
         </div>
+      </div>
       </div>
     </>
   );

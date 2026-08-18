@@ -47,14 +47,7 @@ export default function Home() {
   const applyPeriod = () => setAppliedPeriod(endPeriod.trim());
 
   return (
-    <main className="page">
-      <header className="header">
-        <h1>双色球遗漏趋势分析</h1>
-        <p className="sub">
-          可切换近 30/50/100 期；截止期号空=最新，填写如 2026092 表示含该期往前推
-        </p>
-      </header>
-
+    <div className="page">
       <SampleQueryBar
         sampleSize={sampleSize}
         onSampleSizeChange={setSampleSize}
@@ -63,39 +56,47 @@ export default function Home() {
         onApply={applyPeriod}
       />
 
-      <div className="type-tabs">
-        <button
-          type="button"
-          className={`type-tab ${ballType === "red" ? "active" : ""}`}
-          onClick={() => switchType("red")}
-        >
-          红球 (01-33)
-        </button>
-        <button
-          type="button"
-          className={`type-tab ${ballType === "blue" ? "active" : ""}`}
-          onClick={() => switchType("blue")}
-        >
-          蓝球 (01-16)
-        </button>
-      </div>
+      <div className="trend-layout">
+        <aside className="picker-card">
+          <div className="type-tabs">
+            <button
+              type="button"
+              className={`type-tab ${ballType === "red" ? "active" : ""}`}
+              onClick={() => switchType("red")}
+            >
+              红球 01-33
+            </button>
+            <button
+              type="button"
+              className={`type-tab ${ballType === "blue" ? "active" : ""}`}
+              onClick={() => switchType("blue")}
+            >
+              蓝球 01-16
+            </button>
+          </div>
 
-      <div className="ball-grid">
-        {Array.from({ length: maxBall }, (_, i) => i + 1).map((n) => (
-          <button
-            key={n}
-            type="button"
-            className={`ball-btn ${ballType} ${ball === n ? "active" : ""}`}
-            onClick={() => setBall(n)}
-          >
-            {String(n).padStart(2, "0")}
-          </button>
-        ))}
-      </div>
+          <div className="ball-grid">
+            {Array.from({ length: maxBall }, (_, i) => i + 1).map((n) => (
+              <button
+                key={n}
+                type="button"
+                className={`ball-btn ${ballType} ${ball === n ? "active" : ""}`}
+                onClick={() => setBall(n)}
+                aria-pressed={ball === n}
+                aria-label={`${ballType === "red" ? "红球" : "蓝球"} ${String(n).padStart(2, "0")}`}
+              >
+                {String(n).padStart(2, "0")}
+              </button>
+            ))}
+          </div>
+        </aside>
 
-      {loading && <div className="status">加载中...</div>}
-      {error && <div className="status error">{error}</div>}
-      {!loading && !error && data && <TrendCharts data={data} />}
+        <div className="trend-main">
+          {loading && <div className="status">加载中...</div>}
+          {error && <div className="status error">{error}</div>}
+          {!loading && !error && data && <TrendCharts data={data} />}
+        </div>
+      </div>
 
       <div className="info-bar">
         算法：指数 = 平均遗漏 / max(遗漏值, 1) | SMA 基于指数序列 | 与
@@ -103,6 +104,6 @@ export default function Home() {
         {appliedPeriod ? `　截止期 ${appliedPeriod}` : "　截止=最新"}
         {data ? `　样本 ${data.stats.totalPeriods} 期` : ""}
       </div>
-    </main>
+    </div>
   );
 }
