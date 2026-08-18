@@ -5,6 +5,7 @@ import com.my.project.service.selection.pojo.bo.WeightConfigBo;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Objects;
 
@@ -39,7 +40,7 @@ public class WinningNumberAnalyzerUtils {
         List<Double> scores = winningNumbers.stream()
             .map(PredictHitRecord::getTotalScore)
             .filter(Objects::nonNull)
-            .map(v -> v.doubleValue())
+            .map(BigDecimal::doubleValue)
             .sorted()
             .toList();
 

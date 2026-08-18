@@ -5,16 +5,25 @@ import type { ApiResult, BallType, TrendAnalysisVo } from "@/types/trend";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8866";
 
+function withEndPeriod(params: URLSearchParams, endPeriod?: string) {
+  const p = endPeriod?.trim();
+  if (p) {
+    params.set("endPeriod", p);
+  }
+}
+
 export async function fetchTrend(
   ballType: BallType,
   ball: number,
   sampleSize = 100,
+  endPeriod?: string,
 ): Promise<TrendAnalysisVo> {
   const params = new URLSearchParams({
     ballType,
     ball: String(ball),
     sampleSize: String(sampleSize),
   });
+  withEndPeriod(params, endPeriod);
   const res = await fetch(`${API_BASE}/api/history/trend?${params}`, {
     cache: "no-store",
   });
@@ -30,10 +39,12 @@ export async function fetchTrend(
 
 export async function fetchFeatureStats(
   sampleSize = 100,
+  endPeriod?: string,
 ): Promise<FeatureStatsVo> {
   const params = new URLSearchParams({
     sampleSize: String(sampleSize),
   });
+  withEndPeriod(params, endPeriod);
   const res = await fetch(`${API_BASE}/api/history/feature-stats?${params}`, {
     cache: "no-store",
   });
@@ -70,12 +81,14 @@ export async function fetchPatternTrend(
   feature: PatternFeature,
   ratio: string,
   sampleSize = 100,
+  endPeriod?: string,
 ): Promise<PatternTrendVo> {
   const params = new URLSearchParams({
     feature,
     ratio,
     sampleSize: String(sampleSize),
   });
+  withEndPeriod(params, endPeriod);
   const res = await fetch(`${API_BASE}/api/history/pattern-trend?${params}`, {
     cache: "no-store",
   });

@@ -2,7 +2,6 @@
 
 import type {
   ColdHotAnalysis,
-  CountMap,
   FeatureForecast,
   FeatureForecastItem,
   KillNumberResult,
@@ -20,12 +19,23 @@ function pct(v: number | undefined) {
   return `${(v * 100).toFixed(1)}%`;
 }
 
-function hasItems<T>(arr?: T[] | null): arr is T[] {
-  return Array.isArray(arr) && arr.length > 0;
+function gapTrendLabel(t?: string) {
+  switch (t) {
+    case "heating":
+      return "走热";
+    case "cooling":
+      return "走冷";
+    case "stable":
+      return "平稳";
+    case "unknown":
+      return "不足";
+    default:
+      return "-";
+  }
 }
 
-function hasMap(map?: CountMap | null) {
-  return !!map && Object.keys(map).length > 0;
+function hasItems<T>(arr?: T[] | null): arr is T[] {
+  return Array.isArray(arr) && arr.length > 0;
 }
 
 function BallChip({
@@ -55,33 +65,6 @@ function BallList({
       {balls.map((n) => (
         <BallChip key={`${tone}-${n}`} n={n} tone={tone} />
       ))}
-    </div>
-  );
-}
-
-function CountBars({ title, map }: { title: string; map?: CountMap }) {
-  if (!hasMap(map) || !map) return null;
-  const entries = Object.entries(map).sort((a, b) => b[1] - a[1]);
-  const max = Math.max(...entries.map(([, v]) => v), 1);
-  return (
-    <div className="chart-container">
-      <div className="chart-title">
-        <span>{title}</span>
-      </div>
-      <div className="bar-list">
-        {entries.map(([k, v]) => (
-          <div key={k} className="bar-row">
-            <span className="bar-label">{k}</span>
-            <div className="bar-track">
-              <div
-                className="bar-fill"
-                style={{ width: `${(v / max) * 100}%` }}
-              />
-            </div>
-            <span className="bar-value">{v}</span>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
@@ -258,6 +241,9 @@ function FeatureForecastSection({ data }: { data?: FeatureForecast }) {
                   <th>形态</th>
                   <th>主推</th>
                   <th>备选</th>
+                  <th>间隔趋势</th>
+                  <th>eta</th>
+                  <th>窗口</th>
                   <th>置信度</th>
                   <th>依据</th>
                 </tr>
@@ -270,6 +256,13 @@ function FeatureForecastSection({ data }: { data?: FeatureForecast }) {
                       <strong>{r.item?.value}</strong>
                     </td>
                     <td>{r.item?.alternatives?.join("、") || "-"}</td>
+                    <td>{gapTrendLabel(r.item?.gapTrend)}</td>
+                    <td>
+                      {r.item?.eta != null
+                        ? `${r.item.eta}（Ĝ=${r.item.predictedGap ?? "-"}）`
+                        : "-"}
+                    </td>
+                    <td>{r.item?.dueWindow == null ? "-" : r.item.dueWindow ? "是" : "否"}</td>
                     <td>{pct(r.item?.confidence)}</td>
                     <td className="reason-cell">{r.item?.reason || "-"}</td>
                   </tr>
@@ -287,18 +280,26 @@ function TrendSection({ data }: { data?: TrendAnalysis }) {
   if (!data) return null;
   return (
     <section className="section">
-      <h2>趋势均线</h2>
+      <h2>趋势均线（堆叠 + 斜率）</h2>
       <div className="chart-container">
         <div className="chart-title">
           <span>红球</span>
         </div>
         <div className="kv-grid">
           <div>
-            <div className="kv-label">上升（多头，趋热）</div>
+            <div className="kv-label">回暖（空头抬头，优先）</div>
+            <BallList balls={data.reboundingRedBalls} tone="rise" />
+          </div>
+          <div>
+            <div className="kv-label">上升（多头）</div>
             <BallList balls={data.risingRedBalls} tone="rise" />
           </div>
           <div>
-            <div className="kv-label">下降（空头，趋冷）</div>
+            <div className="kv-label">转弱（多头下行）</div>
+            <BallList balls={data.coolingRedBalls} tone="fall" />
+          </div>
+          <div>
+            <div className="kv-label">趋冷（空头未抬头）</div>
             <BallList balls={data.fallingRedBalls} tone="fall" />
           </div>
         </div>
@@ -309,11 +310,19 @@ function TrendSection({ data }: { data?: TrendAnalysis }) {
         </div>
         <div className="kv-grid">
           <div>
-            <div className="kv-label">上升（多头，趋热）</div>
+            <div className="kv-label">回暖（空头抬头，优先）</div>
+            <BallList balls={data.reboundingBlueBalls} tone="rise" />
+          </div>
+          <div>
+            <div className="kv-label">上升（多头）</div>
             <BallList balls={data.risingBlueBalls} tone="rise" />
           </div>
           <div>
-            <div className="kv-label">下降（空头，趋冷）</div>
+            <div className="kv-label">转弱（多头下行）</div>
+            <BallList balls={data.coolingBlueBalls} tone="fall" />
+          </div>
+          <div>
+            <div className="kv-label">趋冷（空头未抬头）</div>
             <BallList balls={data.fallingBlueBalls} tone="fall" />
           </div>
         </div>
@@ -323,85 +332,13 @@ function TrendSection({ data }: { data?: TrendAnalysis }) {
 }
 
 export default function AnalysisReport({ data }: { data: LotteryAnalysisResp }) {
-  const ov = data.sampleOverview;
-  const hasDist =
-    hasMap(data.oddEvenRatio) ||
-    hasMap(data.bigSmallRatio) ||
-    hasMap(data.primeCompositeRatio) ||
-    hasMap(data.ratio012) ||
-    hasMap(data.span) ||
-    hasMap(data.sumRange) ||
-    hasMap(data.sumTail) ||
-    hasMap(data.threeZoneRatio);
-
   return (
     <>
-      {ov && (
-        <div className="stats-panel">
-          {ov.totalCount != null && (
-            <div className="stat-card">
-              <div className="label">样本期数</div>
-              <div className="value">{ov.totalCount}</div>
-            </div>
-          )}
-          {ov.avgSum != null && (
-            <div className="stat-card">
-              <div className="label">平均和值</div>
-              <div className="value red">{ov.avgSum.toFixed(1)}</div>
-            </div>
-          )}
-          {ov.avgSpan != null && (
-            <div className="stat-card">
-              <div className="label">平均跨度</div>
-              <div className="value green">{ov.avgSpan.toFixed(1)}</div>
-            </div>
-          )}
-          {ov.avgOddEven && (
-            <div className="stat-card">
-              <div className="label">平均奇偶</div>
-              <div className="value yellow">{ov.avgOddEven}</div>
-            </div>
-          )}
-          {ov.avgBigSmall && (
-            <div className="stat-card">
-              <div className="label">平均大小</div>
-              <div className="value blue">{ov.avgBigSmall}</div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {data.conclusion && (
-        <div className="chart-container">
-          <div className="chart-title">
-            <span>综合结论</span>
-          </div>
-          <p className="basis">{data.conclusion}</p>
-        </div>
-      )}
-
       <KillSection data={data.killNumbers} />
       <ColdHotSection data={data.coldHotAnalysis} />
       <FeatureForecastSection data={data.featureForecast} />
       <ThreeZoneSection data={data.predictedThreeZoneRatio} />
       <TrendSection data={data.trendAnalysis} />
-
-      {hasDist && (
-        <section className="section">
-          <h2>形态分布</h2>
-          <CountBars title="奇偶比" map={data.oddEvenRatio} />
-          <CountBars title="大小比" map={data.bigSmallRatio} />
-          <CountBars title="质合比" map={data.primeCompositeRatio} />
-          <CountBars title="012路比" map={data.ratio012} />
-          <CountBars title="跨度" map={data.span} />
-          <CountBars title="和值区间" map={data.sumRange} />
-          <CountBars title="和值尾数" map={data.sumTail} />
-          <CountBars title="三区比" map={data.threeZoneRatio} />
-          <CountBars title="一区个数" map={data.zone1Count} />
-          <CountBars title="二区个数" map={data.zone2Count} />
-          <CountBars title="三区个数" map={data.zone3Count} />
-        </section>
-      )}
     </>
   );
 }

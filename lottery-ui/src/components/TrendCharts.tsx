@@ -218,11 +218,19 @@ export default function TrendCharts({ data }: Props) {
   }, []);
 
   const arrangement =
-    data.arrangement === 1
-      ? { text: "多头排列 >", className: "tag long" }
-      : data.arrangement === -1
-        ? { text: "空头排列 <", className: "tag short" }
-        : { text: "交叉排列", className: "tag" };
+    data.phase === "rebounding"
+      ? { text: "回暖 ↑", className: "tag long" }
+      : data.phase === "rising"
+        ? { text: "多头上升 >", className: "tag long" }
+        : data.phase === "cooling"
+          ? { text: "多头转弱 ↓", className: "tag short" }
+          : data.phase === "falling"
+            ? { text: "空头趋冷 <", className: "tag short" }
+            : data.arrangement === 1
+              ? { text: "多头排列 >", className: "tag long" }
+              : data.arrangement === -1
+                ? { text: "空头排列 <", className: "tag short" }
+                : { text: "交叉排列", className: "tag" };
 
   const { stats } = data;
 

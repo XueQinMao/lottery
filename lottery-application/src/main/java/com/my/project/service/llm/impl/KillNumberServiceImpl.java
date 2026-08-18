@@ -81,11 +81,11 @@ public class KillNumberServiceImpl implements IKillNumberService {
         List<KillItemBo> hardKillBlue = pickTop(blueScores, blueOmission, sampleSize,
             killNumberConfig.getMaxHardKillBlue(), killNumberConfig.getHardThreshold(), Set.of(), false);
 
-        // 趋势均线直接杀号：不参与加权融合，达标直接进硬杀清单
+        // 趋势均线直接杀号：不参与加权融合，达标直接进硬杀清单（须用升序样本）
         Set<Integer> alreadyRed = ballsOf(hardKillRed);
         Set<Integer> alreadyBlue = ballsOf(hardKillBlue);
-        List<KillItemBo> trendKillRed = calcTrendKills(records, true, alreadyRed, killNumberConfig.getTrend());
-        List<KillItemBo> trendKillBlue = calcTrendKills(records, false, alreadyBlue, killNumberConfig.getTrend());
+        List<KillItemBo> trendKillRed = calcTrendKills(chronological, true, alreadyRed, killNumberConfig.getTrend());
+        List<KillItemBo> trendKillBlue = calcTrendKills(chronological, false, alreadyBlue, killNumberConfig.getTrend());
         hardKillRed.addAll(trendKillRed);
         hardKillBlue.addAll(trendKillBlue);
 
@@ -124,14 +124,14 @@ public class KillNumberServiceImpl implements IKillNumberService {
         List<KillItemBo> hardKillBlue = pickTop(blueScores, blueOmission, sampleSize,
             killNumberConfig.getMaxHardKillBlue(), killNumberConfig.getHardThreshold(), Set.of(), false);
 
-        // 趋势均线直接杀号：不参与加权融合，达标直接进硬杀清单
+        // 趋势均线直接杀号：不参与加权融合，达标直接进硬杀清单（须用升序样本）
         Set<Integer> alreadyRed = ballsOf(hardKillRed);
         Set<Integer> alreadyBlue = ballsOf(hardKillBlue);
         KillNumberConfig.TrendThreshold trend = killNumberConfig.getTrend();
         trend.setMaxTrendKillBlue(trend.getMaxTrendKillBlue()+killNumber);
         trend.setMaxTrendKillRed(trend.getMaxTrendKillRed()+killNumber);
-        List<KillItemBo> trendKillRed = calcTrendKills(records, true, alreadyRed, trend);
-        List<KillItemBo> trendKillBlue = calcTrendKills(records, false, alreadyBlue, trend);
+        List<KillItemBo> trendKillRed = calcTrendKills(chronological, true, alreadyRed, trend);
+        List<KillItemBo> trendKillBlue = calcTrendKills(chronological, false, alreadyBlue, trend);
         hardKillRed.addAll(trendKillRed);
         hardKillBlue.addAll(trendKillBlue);
 
@@ -368,7 +368,7 @@ public class KillNumberServiceImpl implements IKillNumberService {
      * 趋势均线直接杀号：计算所有号码的趋势得分，达标者直接生成杀号项。
      * <p>不参与加权融合，独立判断后直接进入硬杀清单。
      *
-     * @param records  升序开奖记录
+     * @param records  开奖记录（最旧 → 最新；与 {@link LotteryTrendUtils#analyze} 约定一致）
      * @param isRed    true=红球(1-33)，false=蓝球(1-16)
      * @param exclude  已在硬杀清单中的号码，跳过避免重复
      * @return 趋势杀号清单
@@ -394,13 +394,18 @@ public class KillNumberServiceImpl implements IKillNumberService {
         double killThreshold = trendCfg.getKillThreshold();
         int topN = isRed ? trendCfg.getMaxTrendKillRed() : trendCfg.getMaxTrendKillBlue();
 
-        // 候选：达标后按 score → 空头开口 → 当前指数升序 → 当前遗漏降序 → 球号 排序，截断 Top-N
+        // 候选：仅「真趋冷 falling」可进趋势杀；回暖/多头抬头不杀
         List<TrendKillCandidate> candidates = new ArrayList<>();
         for (int b = min; b <= max; b++) {
             if (exclude.contains(b)) {
                 continue;
             }
             TrendAnalysisResult result = LotteryTrendUtils.analyze(drawSets, b);
+            String phase = result.getPhase();
+            // rebounding / rising / cooling / neutral：禁止因空头堆叠误杀回暖号
+            if (!"falling".equals(phase)) {
+                continue;
+            }
             double score = trendScore(result);
             if (score < killThreshold) {
                 continue;
@@ -513,6 +518,11 @@ public class KillNumberServiceImpl implements IKillNumberService {
         }
 
         KillNumberConfig.TrendThreshold t = killNumberConfig.getTrend();
+        // 斜率已抬头（回暖）→ 不参与趋势硬杀打分
+        if (result.getMa5Slope() > 0 || "rebounding".equals(result.getPhase())
+            || "rising".equals(result.getPhase())) {
+            return 0.0;
+        }
         double score = 0.0;
 
         double v5 = ma5.get(last);
@@ -657,7 +667,7 @@ public class KillNumberServiceImpl implements IKillNumberService {
         return String.format(
             "基于最近 %d 期样本，按 frequency(冷热)/omission(遗漏)/zone(三区)/tail(尾数)/rebound(冷号回补保护) "
                 + "五维度加权融合，硬杀阈值 %.2f；红球极值遗漏(≥%.0f%%样本)号码白名单保护不进硬杀。"
-                + "趋势均线(空头排列/短穿长)独立杀号，不参与加权融合；"
+                + "趋势均线仅对相位=falling（空头且斜率未抬头）独立杀号；回暖/上升不进趋势硬杀；"
                 + "趋势杀上限红 Top%d / 蓝 Top%d（按趋势分→空头开口→当前指数→遗漏排序）。",
             sampleSize, killNumberConfig.getHardThreshold(),
             killNumberConfig.getExtremeOmissionWhitelistRatio() * 100,

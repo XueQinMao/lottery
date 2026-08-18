@@ -51,15 +51,17 @@ public class HistoryRecordController {
      *
      * @param ballType   red / blue，默认 red
      * @param ball       号码（红 1-33，蓝 1-16），默认 1
-     * @param sampleSize 最近期数，默认 100
+     * @param sampleSize 最近期数，默认 100（可选 30/50/100）
+     * @param endPeriod  截止期号（含该期往前推 sampleSize）；不传则最新
      */
     @GetMapping("/trend")
     public Result<TrendAnalysisVo> analyzeTrend(
         @RequestParam(required = false, defaultValue = "red") String ballType,
         @RequestParam(required = false, defaultValue = "1") int ball,
-        @RequestParam(required = false, defaultValue = "100") int sampleSize) {
+        @RequestParam(required = false, defaultValue = "100") int sampleSize,
+        @RequestParam(required = false) String endPeriod) {
         try {
-            return Result.success(historyRecordService.analyzeTrend(ballType, ball, sampleSize));
+            return Result.success(historyRecordService.analyzeTrend(ballType, ball, sampleSize, endPeriod));
         } catch (Exception e) {
             return Result.error(e.getMessage());
         }
@@ -69,12 +71,14 @@ public class HistoryRecordController {
      * 开奖形态统计：红球和值、差值（跨度）、质合比，以及红/蓝球奇偶比。
      *
      * @param sampleSize 最近期数，默认 100
+     * @param endPeriod  截止期号（含）；不传则最新
      */
     @GetMapping("/feature-stats")
     public Result<FeatureStatsVo> analyzeFeatureStats(
-        @RequestParam(required = false, defaultValue = "100") int sampleSize) {
+        @RequestParam(required = false, defaultValue = "100") int sampleSize,
+        @RequestParam(required = false) String endPeriod) {
         try {
-            return Result.success(historyRecordService.analyzeFeatureStats(sampleSize));
+            return Result.success(historyRecordService.analyzeFeatureStats(sampleSize, endPeriod));
         } catch (Exception e) {
             return Result.error(e.getMessage());
         }
@@ -89,14 +93,16 @@ public class HistoryRecordController {
      *                   blueOddEven / blueBigSmall / blueBigSmallOddEven / blueRatio012
      * @param ratio      分桶键，如 1:5、0:4:2、21、73-78、奇、大、大奇、0路
      * @param sampleSize 最近期数，默认 100
+     * @param endPeriod  截止期号（含）；不传则最新
      */
     @GetMapping("/pattern-trend")
     public Result<PatternTrendVo> analyzePatternTrend(
         @RequestParam(required = false, defaultValue = "oddEven") String feature,
         @RequestParam(required = false, defaultValue = "3:3") String ratio,
-        @RequestParam(required = false, defaultValue = "100") int sampleSize) {
+        @RequestParam(required = false, defaultValue = "100") int sampleSize,
+        @RequestParam(required = false) String endPeriod) {
         try {
-            return Result.success(historyRecordService.analyzePatternTrend(feature, ratio, sampleSize));
+            return Result.success(historyRecordService.analyzePatternTrend(feature, ratio, sampleSize, endPeriod));
         } catch (Exception e) {
             return Result.error(e.getMessage());
         }

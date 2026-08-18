@@ -13,18 +13,31 @@ import java.util.Map;
 /**
  * LotteryMorphologySnapshotUtils
  *
- * <p>把形态指数页同源的 {@link PatternTrendVo} 压成 LLM 快照：
- * 样本期数、最近一期、stats、ratioOptions 与页面接口完全一致。
+ * <p>把 {@link PatternTrendVo}（与形态指数页同源）压成 LLM 快照。
  *
  * @author 刘强
- * @version 2026/08/14
+ * @version 2026/08/18
  **/
 public final class LotteryMorphologySnapshotUtils {
 
     private LotteryMorphologySnapshotUtils() {
     }
 
+    /**
+     * 形态指数页摘要（仅 stats + ratioOptions 标量）。
+     */
     public static String fromPatternTrend(PatternTrendVo vo) {
+        return JSON.toJSONString(baseRoot(vo, false));
+    }
+
+    /**
+     * LLM 推算用完整快照：共享 periods/actuals，每个分桶带遗漏序列、指数序列、命中间隔。
+     */
+    public static String fromPatternTrendForLlm(PatternTrendVo vo) {
+        return JSON.toJSONString(baseRoot(vo, true));
+    }
+
+    private static Map<String, Object> baseRoot(PatternTrendVo vo, boolean withSeries) {
         if (vo == null || vo.getStats() == null) {
             throw new IllegalArgumentException("形态指数结果不能为空");
         }
@@ -36,7 +49,11 @@ public final class LotteryMorphologySnapshotUtils {
         root.put("lastPeriod", vo.getLatestPeriod());
         root.put("lastWinning", vo.getLatestWinning());
         root.put("lastValue", vo.getLatestRatio());
-        root.put("indexFormula", "index = hitCount − n×p；与形态指数页 stats / ratioOptions 同源");
+        root.put("indexFormula", "indexValues 累计：命中 +(1-p)，未命中 -p；标量 index = hitCount - n*p");
+        if (withSeries) {
+            root.put("periods", vo.getPeriods());
+            root.put("actuals", vo.getActuals());
+        }
 
         Map<String, Object> lastStats = new LinkedHashMap<>();
         lastStats.put("maxOmission", stats.getMaxOmission());
@@ -61,9 +78,14 @@ public final class LotteryMorphologySnapshotUtils {
             row.put("avgOmission", opt.getAvgOmission());
             row.put("maxOmission", opt.getMaxOmission());
             row.put("isLast", opt.getRatio() != null && opt.getRatio().equals(vo.getLatestRatio()));
+            if (withSeries) {
+                row.put("omissions", opt.getOmissions());
+                row.put("indexValues", opt.getIndexValues());
+                row.put("hitIntervals", opt.getHitIntervals());
+            }
             options.add(row);
         }
         root.put("ratioOptions", options);
-        return JSON.toJSONString(root);
+        return root;
     }
 }

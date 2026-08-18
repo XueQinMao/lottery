@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import PatternTrendCharts from "@/components/PatternTrendCharts";
+import SampleQueryBar from "@/components/SampleQueryBar";
 import { fetchPatternTrend } from "@/lib/api";
 import type { PatternFeature, PatternTrendVo } from "@/types/pattern-trend";
 
@@ -30,8 +31,6 @@ const BLUE_FEATURES: { code: PatternFeature; label: string; defaultRatio: string
     { code: "blueRatio012", label: "012路", defaultRatio: "0路" },
   ];
 
-const SAMPLE_OPTIONS = [30, 50, 100];
-
 function ratioButtonLabel(feature: PatternFeature, ratio: string) {
   if (
     feature === "zone1Count" ||
@@ -48,6 +47,8 @@ export default function PatternTrendPage() {
   const [feature, setFeature] = useState<PatternFeature>("oddEven");
   const [ratio, setRatio] = useState("1:5");
   const [sampleSize, setSampleSize] = useState(100);
+  const [endPeriod, setEndPeriod] = useState("");
+  const [appliedPeriod, setAppliedPeriod] = useState("");
   const [data, setData] = useState<PatternTrendVo | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,11 +56,11 @@ export default function PatternTrendPage() {
   const features = ballGroup === "red" ? RED_FEATURES : BLUE_FEATURES;
 
   const load = useCallback(
-    async (feat: PatternFeature, r: string, size: number) => {
+    async (feat: PatternFeature, r: string, size: number, period: string) => {
       setLoading(true);
       setError(null);
       try {
-        const result = await fetchPatternTrend(feat, r, size);
+        const result = await fetchPatternTrend(feat, r, size, period || undefined);
         setData(result);
       } catch (e) {
         setData(null);
@@ -72,8 +73,8 @@ export default function PatternTrendPage() {
   );
 
   useEffect(() => {
-    void load(feature, ratio, sampleSize);
-  }, [feature, load, ratio, sampleSize]);
+    void load(feature, ratio, sampleSize, appliedPeriod);
+  }, [feature, load, ratio, sampleSize, appliedPeriod]);
 
   const switchGroup = (group: BallGroup) => {
     const first = group === "red" ? RED_FEATURES[0] : BLUE_FEATURES[0];
@@ -89,9 +90,18 @@ export default function PatternTrendPage() {
       <header className="header">
         <h1>形态遗漏与超额指数</h1>
         <p className="sub">
-          指数 = 实际出现次数 − 理论出现次数（n × p）；命中 +(1-p)，未命中 −p
+          指数 = 实际出现次数 − 理论出现次数（n × p）；命中 +(1-p)，未命中 −p。
+          截止期号空=最新。
         </p>
       </header>
+
+      <SampleQueryBar
+        sampleSize={sampleSize}
+        onSampleSizeChange={setSampleSize}
+        endPeriod={endPeriod}
+        onEndPeriodChange={setEndPeriod}
+        onApply={() => setAppliedPeriod(endPeriod.trim())}
+      />
 
       <div className="type-tabs">
         <button
@@ -143,19 +153,6 @@ export default function PatternTrendPage() {
         })}
       </div>
 
-      <div className="type-tabs">
-        {SAMPLE_OPTIONS.map((n) => (
-          <button
-            key={n}
-            type="button"
-            className={`type-tab ${sampleSize === n ? "active" : ""}`}
-            onClick={() => setSampleSize(n)}
-          >
-            近 {n} 期
-          </button>
-        ))}
-      </div>
-
       {loading && <div className="status">加载中...</div>}
       {error && <div className="status error">{error}</div>}
       {!loading && !error && data && <PatternTrendCharts data={data} />}
@@ -165,8 +162,9 @@ export default function PatternTrendPage() {
         {ballGroup === "red"
           ? " 质合比按走势图口径：01 计为质数。"
           : " 蓝球 1-16：大小 1-8 小 / 9-16 大；012路 0路 5 个、1路 6 个、2路 5 个。"}
+        {appliedPeriod ? `　截止期 ${appliedPeriod}` : "　截止=最新"}
         {data
-          ? `　当前 p=${(data.stats.theoreticalProb * 100).toFixed(2)}%`
+          ? `　当前 p=${(data.stats.theoreticalProb * 100).toFixed(2)}%　样本 ${data.stats.totalPeriods} 期`
           : ""}
       </div>
     </main>

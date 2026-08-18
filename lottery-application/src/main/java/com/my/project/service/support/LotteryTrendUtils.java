@@ -164,9 +164,52 @@ public class LotteryTrendUtils {
         return 0;
     }
 
+    /** MA5 斜率回看期数：末值 − 前 lookback 期值 */
+    public static final int MA5_SLOPE_LOOKBACK = 3;
+
     /**
-     * 完整趋势分析：遗漏序列 → 反向指数 → SMA → 统计指标 → 均线排列。
-     * 一次调用返回全部结果，供前端/服务直接使用。
+     * 计算均线斜率（末点 − lookback 期前）。数据不足返回 0。
+     */
+    public static double calcSlope(List<Double> ma, int lookback) {
+        if (ma == null || ma.isEmpty() || lookback <= 0) {
+            return 0.0;
+        }
+        int last = ma.size() - 1;
+        int prev = last - lookback;
+        if (prev < 0 || ma.get(last) == null || ma.get(prev) == null) {
+            return 0.0;
+        }
+        return ma.get(last) - ma.get(prev);
+    }
+
+    /**
+     * 综合「均线堆叠 + MA5 斜率」得到趋势相位。
+     * <ul>
+     *   <li>rising：多头且斜率未明显下行</li>
+     *   <li>rebounding：空头或交叉，但斜率向上（空头反弹/回暖，勿回避）</li>
+     *   <li>falling：空头且斜率未上行</li>
+     *   <li>cooling：多头但斜率下行</li>
+     *   <li>neutral：其余</li>
+     * </ul>
+     */
+    public static String classifyPhase(int arrangement, double ma5Slope) {
+        if (arrangement == 1) {
+            return ma5Slope < 0 ? "cooling" : "rising";
+        }
+        if (arrangement == -1) {
+            return ma5Slope > 0 ? "rebounding" : "falling";
+        }
+        if (ma5Slope > 0) {
+            return "rebounding";
+        }
+        if (ma5Slope < 0) {
+            return "falling";
+        }
+        return "neutral";
+    }
+
+    /**
+     * 完整趋势分析：遗漏序列 → 反向指数 → SMA → 统计指标 → 均线排列 → 斜率相位。
      *
      * @param draws        每期开出的号码集合列表（最旧→最新）
      * @param targetNumber 要分析的目标号码
@@ -180,6 +223,8 @@ public class LotteryTrendUtils {
         List<Double> ma10 = calcSMADouble(indexValues, 10);
         List<Double> ma20 = calcSMADouble(indexValues, 20);
         int arrangement = calcArrangement(ma5, ma10, ma20);
+        double ma5Slope = calcSlope(ma5, MA5_SLOPE_LOOKBACK);
+        String phase = classifyPhase(arrangement, ma5Slope);
 
         TrendAnalysisResult result = new TrendAnalysisResult();
         result.setOmissions(omissions);
@@ -189,6 +234,8 @@ public class LotteryTrendUtils {
         result.setMa20(ma20);
         result.setStats(stats);
         result.setArrangement(arrangement);
+        result.setMa5Slope(ma5Slope);
+        result.setPhase(phase);
         return result;
     }
 
@@ -213,5 +260,13 @@ public class LotteryTrendUtils {
         private TrendStats stats;
         /** 1=多头, -1=空头, 0=交叉 */
         private int arrangement;
+        /** MA5 近 lookback 期斜率；&gt;0 抬头，&lt;0 下行 */
+        private double ma5Slope;
+        /**
+         * rising / rebounding / falling / cooling / neutral
+         *
+         * @see #classifyPhase(int, double)
+         */
+        private String phase;
     }
 }

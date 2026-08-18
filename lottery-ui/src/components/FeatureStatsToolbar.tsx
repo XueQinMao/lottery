@@ -2,17 +2,22 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-
-const SAMPLE_OPTIONS = [30, 50, 100];
+import SampleQueryBar from "@/components/SampleQueryBar";
 
 interface Props {
   sampleSize: number;
   onSampleSizeChange: (size: number) => void;
+  endPeriod: string;
+  onEndPeriodChange: (period: string) => void;
+  onApplyPeriod: () => void;
 }
 
 export default function FeatureStatsToolbar({
   sampleSize,
   onSampleSizeChange,
+  endPeriod,
+  onEndPeriodChange,
+  onApplyPeriod,
 }: Props) {
   const pathname = usePathname();
 
@@ -32,18 +37,13 @@ export default function FeatureStatsToolbar({
           质合比 / 奇偶比
         </Link>
       </div>
-      <div className="type-tabs">
-        {SAMPLE_OPTIONS.map((n) => (
-          <button
-            key={n}
-            type="button"
-            className={`type-tab ${sampleSize === n ? "active" : ""}`}
-            onClick={() => onSampleSizeChange(n)}
-          >
-            近 {n} 期
-          </button>
-        ))}
-      </div>
+      <SampleQueryBar
+        sampleSize={sampleSize}
+        onSampleSizeChange={onSampleSizeChange}
+        endPeriod={endPeriod}
+        onEndPeriodChange={onEndPeriodChange}
+        onApply={onApplyPeriod}
+      />
     </div>
   );
 }

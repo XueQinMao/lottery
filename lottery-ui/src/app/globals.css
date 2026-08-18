@@ -48,6 +48,38 @@ body {
   margin-bottom: 8px;
 }
 
+.sample-query-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+}
+
+.period-query {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: #8b949e;
+}
+
+.period-query input {
+  width: 160px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #30363d;
+  background: #0d1117;
+  color: #e6edf3;
+  font-size: 13px;
+}
+
+.period-query input:focus {
+  outline: none;
+  border-color: #1f6feb;
+}
+
 .page {
   padding: 16px;
   max-width: 1200px;

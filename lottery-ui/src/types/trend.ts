@@ -20,6 +20,9 @@ export interface TrendAnalysisVo {
   ma20: (number | null)[];
   stats: TrendStats;
   arrangement: number;
+  ma5Slope?: number;
+  /** rising / rebounding / falling / cooling / neutral */
+  phase?: string;
 }
 
 export interface ApiResult<T> {

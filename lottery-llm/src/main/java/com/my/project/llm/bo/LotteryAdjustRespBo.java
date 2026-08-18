@@ -7,11 +7,11 @@ import java.util.List;
 /**
  * LotteryAdjustRespBo
  *
- * <p>大模型号码调优结果：
+ * <p>大模型号码调优 / 推荐结果：
  * <ul>
- *     <li>各组：单式调整 + 该组对应复式 {@link AdjustedTicket#complexTicket}</li>
- *     <li>全局：综合后的<strong>一组最终可购买复式</strong> {@link #finalComplexTicket}</li>
- *     <li>全局：综合后的<strong>两组最终可购买单式</strong> {@link #finalSingleTickets}</li>
+ *     <li>各组：仅单式调整结果 {@link #adjustedTickets}（不含组内复式）</li>
+ *     <li>全局：综合后的最终推荐包 {@link #finalRecommendation}
+ *         （3 胆码 + 2 组单式 + 1 组复式）</li>
  * </ul>
  *
  * @author 刘强
@@ -21,51 +21,63 @@ import java.util.List;
 public class LotteryAdjustRespBo {
 
     /**
-     * 各组预测号码的调整结果（含该组复式），顺序与入参 tickets 一致。
+     * 各组预测号码的调整 / 推荐结果（仅单式），顺序与入参 tickets 一致（推荐模式为生成顺序）。
      */
     private List<AdjustedTicket> adjustedTickets;
 
     /**
-     * 最终推荐购买的复式玩法（唯一）。
-     * <p>红球 7-10、蓝球 2-5，综合全部候选与特征报告生成。
+     * 基于整体调优 / 推荐结果凝练的最终可购买方案（唯一）。
      */
-    private ComplexTicket finalComplexTicket;
-
-    /**
-     * 最终推荐购买的单式玩法（恰好 2 组）。
-     * <p>每组红球 6 个 + 蓝球 1 个，共 1 注；用于低成本对冲复式风险。
-     * 两组分别针对不同形态假设（如热温延续 / 温冷回冷）做精准聚焦。
-     */
-    private List<SingleTicket> finalSingleTickets;
+    private FinalRecommendation finalRecommendation;
 
     /** 综合调优 / 选号说明 */
     private String conclusion;
 
     /**
-     * 单组预测号码的调整结果，以及基于该组生成的复式。
+     * 最终推荐包：3 胆码 + 2 组单式 + 1 组复式。
+     */
+    @Data
+    public static class FinalRecommendation {
+        /**
+         * 三个胆码（红球，升序，恰好 3 个，1-33 互异）。
+         * <p>须被两组单式与复式红球同时包含。
+         */
+        private List<Integer> danBalls;
+        /** 胆码选号依据 */
+        private String danBasis;
+        /**
+         * 最终推荐购买的单式玩法（恰好 2 组）。
+         * <p>每组红球 6 个 + 蓝球 1 个，共 1 注；两组分别针对不同形态假设。
+         */
+        private List<SingleTicket> singleTickets;
+        /**
+         * 最终推荐购买的复式玩法（唯一）。
+         * <p>红球 7-10、蓝球 2-5，综合全部候选与特征报告生成。
+         */
+        private ComplexTicket complexTicket;
+    }
+
+    /**
+     * 单组预测号码的调整 / 推荐结果（仅单式，不含复式）。
      */
     @Data
     public static class AdjustedTicket {
         /** 对应入参的组标识 */
         private String id;
-        /** 原始红球（升序） */
+        /** 原始红球（升序）；推荐模式可为 null */
         private List<Integer> originalRedBalls;
-        /** 原始蓝球 */
+        /** 原始蓝球；推荐模式可为 null */
         private Integer originalBlueBall;
-        /** 被替换的红球及替换说明 */
+        /** 被替换的红球及替换说明；推荐模式为空数组 */
         private List<RedReplacement> redReplacements;
-        /** 被替换的蓝球及替换说明 */
+        /** 被替换的蓝球及替换说明；推荐模式可为 null */
         private BlueReplacement blueReplacement;
-        /** 调整后的红球（升序，6 个） */
+        /** 调整后 / 推荐的红球（升序，6 个） */
         private List<Integer> adjustedRedBalls;
-        /** 调整后的蓝球 */
+        /** 调整后 / 推荐的蓝球 */
         private Integer adjustedBlueBall;
-        /** 本组调整理由 */
+        /** 本组调整 / 推荐理由 */
         private String reason;
-        /**
-         * 基于本组调整后单式 + 特征报告生成的复式（与本组一一对应）。
-         */
-        private ComplexTicket complexTicket;
     }
 
     @Data
@@ -101,7 +113,6 @@ public class LotteryAdjustRespBo {
 
     /**
      * 单式：红球 6 个 + 蓝球 1 个，共 1 注。
-     * <p>用于在最终复式之外，提供低成本、聚焦特定形态假设的可购买单组号码。
      */
     @Data
     public static class SingleTicket {

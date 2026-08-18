@@ -49,6 +49,12 @@ public class TrendAnalysisVo {
     /** 均线排列：1=多头, -1=空头, 0=交叉 */
     private Integer arrangement;
 
+    /** MA5 近 3 期斜率 */
+    private Double ma5Slope;
+
+    /** rising / rebounding / falling / cooling / neutral */
+    private String phase;
+
     @Data
     @Builder
     @NoArgsConstructor

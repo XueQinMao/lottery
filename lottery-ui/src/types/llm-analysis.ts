@@ -36,17 +36,13 @@ export interface ThreeZoneRatioPredict {
 
 export interface TrendAnalysis {
   risingRedBalls?: number[];
+  reboundingRedBalls?: number[];
   fallingRedBalls?: number[];
+  coolingRedBalls?: number[];
   risingBlueBalls?: number[];
+  reboundingBlueBalls?: number[];
   fallingBlueBalls?: number[];
-}
-
-export interface SampleOverview {
-  totalCount?: number;
-  avgSum?: number;
-  avgSpan?: number;
-  avgOddEven?: string;
-  avgBigSmall?: string;
+  coolingBlueBalls?: number[];
 }
 
 export interface FeatureForecastItem {
@@ -54,6 +50,14 @@ export interface FeatureForecastItem {
   alternatives?: string[];
   confidence?: number;
   reason?: string;
+  /** heating / cooling / stable / unknown */
+  gapTrend?: string;
+  predictedGap?: number;
+  currentOmission?: number;
+  eta?: number;
+  dueWindow?: boolean;
+  score?: number;
+  recentGaps?: number[];
 }
 
 export interface FeatureForecast {
@@ -75,28 +79,11 @@ export interface FeatureForecast {
   basis?: string;
 }
 
-export interface CountMap {
-  [key: string]: number;
-}
-
+/** 调优/推荐用特征报告：仅含选号约束模块，不含历史直方图 */
 export interface LotteryAnalysisResp {
-  sampleOverview?: SampleOverview;
-  oddEvenRatio?: CountMap;
-  bigSmallRatio?: CountMap;
-  primeCompositeRatio?: CountMap;
-  ratio012?: CountMap;
-  span?: CountMap;
-  sumRange?: CountMap;
-  sumTail?: CountMap;
-  sumDigit?: CountMap;
-  threeZoneRatio?: CountMap;
-  zone1Count?: CountMap;
-  zone2Count?: CountMap;
-  zone3Count?: CountMap;
   killNumbers?: KillNumberResult;
   coldHotAnalysis?: ColdHotAnalysis;
   predictedThreeZoneRatio?: ThreeZoneRatioPredict;
   trendAnalysis?: TrendAnalysis;
   featureForecast?: FeatureForecast;
-  conclusion?: string;
 }

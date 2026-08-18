@@ -2,7 +2,6 @@ package com.my.project.service.selection.impl;
 
 import com.my.project.llm.bo.LotteryAdjustRespBo;
 import com.my.project.persistence.entity.BuyRecord;
-import com.my.project.persistence.entity.HistoryRecord;
 import com.my.project.persistence.repository.IBuyRecordRepository;
 import com.my.project.service.enums.PrizeLevelEnum;
 import com.my.project.service.history.IHistoryRecordService;
@@ -43,19 +42,70 @@ public class BuyRecordServiceImpl implements IBuyRecordService {
 
     @Override
     public void batchSave(LotteryAdjustRespBo adjustRespBo, LocalDate openDate, BuyRecordTypeEnums type) {
-        var buyRecords = CollectionUtils.emptyIfNull(adjustRespBo.getAdjustedTickets()).stream().map(
-            t -> BuyRecord.builder().type(type.name()).openDate(openDate)
-                .oriRedBalls(StringUtils.join(t.getOriginalRedBalls(), ","))
-                .oriBlueBall(String.valueOf(t.getOriginalBlueBall()))
-                .adjustedBlueBalls(StringUtils.join(t.getAdjustedBlueBall(), ","))
-                .adjustedRedBalls(String.valueOf(t.getAdjustedRedBalls()))
-                .redBalls(StringUtils.join(t.getComplexTicket().getRedBalls(), ","))
-                .blueBalls(StringUtils.join(t.getComplexTicket().getBlueBalls(), ","))
-                .totalBets(t.getComplexTicket().getTotalBets()).reason(t.getReason()).createTime(LocalDateTime.now())
-                .build()).toList();
+        if (adjustRespBo == null) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        List<BuyRecord> buyRecords = new ArrayList<>();
+
+        // 各组单式：购买号=调整后单式，不含组内复式
+        CollectionUtils.emptyIfNull(adjustRespBo.getAdjustedTickets()).forEach(t ->
+            buyRecords.add(BuyRecord.builder()
+                .type(type.name())
+                .openDate(openDate)
+                .oriRedBalls(joinBalls(t.getOriginalRedBalls()))
+                .oriBlueBall(toBallStr(t.getOriginalBlueBall()))
+                .adjustedRedBalls(joinBalls(t.getAdjustedRedBalls()))
+                .adjustedBlueBalls(toBallStr(t.getAdjustedBlueBall()))
+                .redBalls(joinBalls(t.getAdjustedRedBalls()))
+                .blueBalls(toBallStr(t.getAdjustedBlueBall()))
+                .totalBets(1)
+                .reason(t.getReason())
+                .createTime(now)
+                .build()));
+
+        // 最终推荐包：3 胆码 + 2 单式 + 1 复式
+        LotteryAdjustRespBo.FinalRecommendation finalRec = adjustRespBo.getFinalRecommendation();
+        if (finalRec != null) {
+            String danBalls = joinBalls(finalRec.getDanBalls());
+            CollectionUtils.emptyIfNull(finalRec.getSingleTickets()).forEach(s ->
+                buyRecords.add(BuyRecord.builder()
+                    .type(type.name())
+                    .openDate(openDate)
+                    .coreRedBalls(danBalls)
+                    .redBalls(joinBalls(s.getRedBalls()))
+                    .blueBalls(toBallStr(s.getBlueBall()))
+                    .totalBets(s.getTotalBets() == null ? 1 : s.getTotalBets())
+                    .reason(StringUtils.defaultIfBlank(s.getBasis(), finalRec.getDanBasis()))
+                    .createTime(now)
+                    .build()));
+
+            LotteryAdjustRespBo.ComplexTicket complex = finalRec.getComplexTicket();
+            if (complex != null) {
+                buyRecords.add(BuyRecord.builder()
+                    .type(type.name())
+                    .openDate(openDate)
+                    .coreRedBalls(danBalls)
+                    .redBalls(joinBalls(complex.getRedBalls()))
+                    .blueBalls(joinBalls(complex.getBlueBalls()))
+                    .totalBets(complex.getTotalBets())
+                    .reason(StringUtils.defaultIfBlank(complex.getBasis(), adjustRespBo.getConclusion()))
+                    .createTime(now)
+                    .build());
+            }
+        }
+
         if (CollectionUtils.isNotEmpty(buyRecords)) {
             buyRecordRepository.saveOrUpdateBatch(buyRecords);
         }
+    }
+
+    private static String joinBalls(List<Integer> balls) {
+        return CollectionUtils.isEmpty(balls) ? null : StringUtils.join(balls, ",");
+    }
+
+    private static String toBallStr(Integer ball) {
+        return ball == null ? null : String.valueOf(ball);
     }
 
     @Override
@@ -64,8 +114,9 @@ public class BuyRecordServiceImpl implements IBuyRecordService {
         return CollectionUtils.emptyIfNull(buyRecords).stream().map(
             b -> BuyRecordDto.builder().id(b.getId()).openDate(b.getOpenDate()).oriRedBalls(b.getOriRedBalls())
                 .oriBlueBall(b.getOriBlueBall()).adjustedRedBalls(b.getAdjustedRedBalls())
-                .adjustedBlueBall(b.getAdjustedBlueBalls()).redBalls(b.getRedBalls()).blueBalls(b.getBlueBalls())
-                .reason(b.getReason()).build()).toList();
+                .adjustedBlueBall(b.getAdjustedBlueBalls()).coreRedBalls(b.getCoreRedBalls())
+                .redBalls(b.getRedBalls()).blueBalls(b.getBlueBalls())
+                .reason(b.getReason()).totalBets(b.getTotalBets()).build()).toList();
     }
 
     @Override
@@ -85,24 +136,36 @@ public class BuyRecordServiceImpl implements IBuyRecordService {
         return CollectionUtils.emptyIfNull(buyRecords).stream().map(
             r -> BuyRecordVo.builder().oriRedBalls(r.getOriRedBalls()).oriBlueBall(r.getOriBlueBall())
                 .adjustedRedBalls(r.getAdjustedRedBalls()).adjustedBlueBall(r.getAdjustedBlueBalls())
+                .coreRedBalls(r.getCoreRedBalls())
                 .redBalls(r.getRedBalls()).blueBalls(r.getBlueBalls()).build())
             .filter(vo -> {
-                var oriHitPrizeLevels = SsqPrizeCheckerUtils.checkPrize(integers, latestRecords.getSpecial(),
-                    convertFunc.apply(vo.getOriRedBalls()), convertFunc.apply(vo.getOriBlueBall()));
-                var adjustHitPrizeLevels = SsqPrizeCheckerUtils.checkPrize(integers, latestRecords.getSpecial(),
-                    convertFunc.apply(vo.getAdjustedRedBalls()), convertFunc.apply(vo.getAdjustedBlueBall()));
-
-                var hitPrizeLevels = SsqPrizeCheckerUtils.checkPrize(integers, latestRecords.getSpecial(),
-                    convertFunc.apply(vo.getRedBalls()), convertFunc.apply(vo.getBlueBalls()));
-                return oriHitPrizeLevels.isHit() || adjustHitPrizeLevels.isHit() || hitPrizeLevels.isHit();
+                boolean oriHit = StringUtils.isNotBlank(vo.getOriRedBalls()) && StringUtils.isNotBlank(vo.getOriBlueBall())
+                    && SsqPrizeCheckerUtils.checkPrize(integers, latestRecords.getSpecial(),
+                    convertFunc.apply(vo.getOriRedBalls()), convertFunc.apply(vo.getOriBlueBall())).isHit();
+                boolean adjustHit = StringUtils.isNotBlank(vo.getAdjustedRedBalls())
+                    && StringUtils.isNotBlank(vo.getAdjustedBlueBall())
+                    && SsqPrizeCheckerUtils.checkPrize(integers, latestRecords.getSpecial(),
+                    convertFunc.apply(vo.getAdjustedRedBalls()), convertFunc.apply(vo.getAdjustedBlueBall())).isHit();
+                boolean buyHit = StringUtils.isNotBlank(vo.getRedBalls()) && StringUtils.isNotBlank(vo.getBlueBalls())
+                    && SsqPrizeCheckerUtils.checkPrize(integers, latestRecords.getSpecial(),
+                    convertFunc.apply(vo.getRedBalls()), convertFunc.apply(vo.getBlueBalls())).isHit();
+                return oriHit || adjustHit || buyHit;
         }).map(vo -> {
-            var oriHitPrizeLevels = SsqPrizeCheckerUtils.checkPrize(integers, latestRecords.getSpecial(),
-                convertFunc.apply(vo.getOriRedBalls()), convertFunc.apply(vo.getOriBlueBall()));
-            var adjustHitPrizeLevels = SsqPrizeCheckerUtils.checkPrize(integers, latestRecords.getSpecial(),
-                convertFunc.apply(vo.getAdjustedRedBalls()), convertFunc.apply(vo.getAdjustedBlueBall()));
-
-            var hitPrizeLevels = SsqPrizeCheckerUtils.checkPrize(integers, latestRecords.getSpecial(),
-                convertFunc.apply(vo.getRedBalls()), convertFunc.apply(vo.getBlueBalls()));
+            PrizeLevelEnum oriHitPrizeLevels = StringUtils.isNotBlank(vo.getOriRedBalls())
+                && StringUtils.isNotBlank(vo.getOriBlueBall())
+                ? SsqPrizeCheckerUtils.checkPrize(integers, latestRecords.getSpecial(),
+                convertFunc.apply(vo.getOriRedBalls()), convertFunc.apply(vo.getOriBlueBall()))
+                : PrizeLevelEnum.NO_PRIZE;
+            PrizeLevelEnum adjustHitPrizeLevels = StringUtils.isNotBlank(vo.getAdjustedRedBalls())
+                && StringUtils.isNotBlank(vo.getAdjustedBlueBall())
+                ? SsqPrizeCheckerUtils.checkPrize(integers, latestRecords.getSpecial(),
+                convertFunc.apply(vo.getAdjustedRedBalls()), convertFunc.apply(vo.getAdjustedBlueBall()))
+                : PrizeLevelEnum.NO_PRIZE;
+            PrizeLevelEnum hitPrizeLevels = StringUtils.isNotBlank(vo.getRedBalls())
+                && StringUtils.isNotBlank(vo.getBlueBalls())
+                ? SsqPrizeCheckerUtils.checkPrize(integers, latestRecords.getSpecial(),
+                convertFunc.apply(vo.getRedBalls()), convertFunc.apply(vo.getBlueBalls()))
+                : PrizeLevelEnum.NO_PRIZE;
             Integer i = Stream.of(oriHitPrizeLevels, adjustHitPrizeLevels, hitPrizeLevels).filter(PrizeLevelEnum::isHit)
                 .map(PrizeLevelEnum::getLevel).min(Comparator.naturalOrder()).orElse(null);
             return Pair.of(PrizeLevelEnum.getPrizeLevel(i), vo);

@@ -142,7 +142,27 @@ public class HistoryRecordServiceImpl implements IHistoryRecordService {
     }
 
     @Override
-    public TrendAnalysisVo analyzeTrend(String ballType, int ball, int sampleSize) {
+    public List<HistoryRecord> getRecordsEndingAt(String endPeriod, int count) {
+        int size = Math.max(count, 1);
+        if (!StringUtils.hasText(endPeriod)) {
+            return getLatestRecords(size);
+        }
+        String period = endPeriod.trim();
+        HistoryRecord anchor = historyRecordRepository.lambdaQuery()
+            .eq(HistoryRecord::getPeriod, period)
+            .one();
+        if (anchor == null || anchor.getOpenDate() == null) {
+            throw new IllegalArgumentException("期号不存在: " + period);
+        }
+        return historyRecordRepository.lambdaQuery()
+            .le(HistoryRecord::getOpenDate, anchor.getOpenDate())
+            .orderByDesc(HistoryRecord::getOpenDate)
+            .last("limit " + size)
+            .list();
+    }
+
+    @Override
+    public TrendAnalysisVo analyzeTrend(String ballType, int ball, int sampleSize, String endPeriod) {
         String type = StringUtils.hasText(ballType) ? ballType.trim().toLowerCase() : "red";
         if (!"red".equals(type) && !"blue".equals(type)) {
             throw new IllegalArgumentException("ballType 仅支持 red / blue");
@@ -152,11 +172,11 @@ public class HistoryRecordServiceImpl implements IHistoryRecordService {
             throw new IllegalArgumentException("号码超出范围: " + ball + "（" + type + " 应为 1-" + maxBall + "）");
         }
         int size = Math.max(sampleSize, 1);
-        List<HistoryRecord> latest = getLatestRecords(size);
+        List<HistoryRecord> latest = getRecordsEndingAt(endPeriod, size);
         if (CollectionUtil.isEmpty(latest)) {
             throw new IllegalStateException("无可用的历史开奖记录");
         }
-        // getLatestRecords 为降序（最新→最旧），趋势计算需要升序（最旧→最新）
+        // getRecordsEndingAt 为降序（截止期→更旧），趋势计算需要升序（最旧→最新）
         List<HistoryRecord> chronological = new ArrayList<>(latest);
         Collections.reverse(chronological);
 
@@ -184,6 +204,8 @@ public class HistoryRecordServiceImpl implements IHistoryRecordService {
             .ma10(result.getMa10())
             .ma20(result.getMa20())
             .arrangement(result.getArrangement())
+            .ma5Slope(result.getMa5Slope())
+            .phase(result.getPhase())
             .stats(TrendAnalysisVo.Stats.builder()
                 .maxOmission(stats.getMaxOmission())
                 .avgOmission(stats.getAvgOmission())
@@ -196,9 +218,9 @@ public class HistoryRecordServiceImpl implements IHistoryRecordService {
     }
 
     @Override
-    public FeatureStatsVo analyzeFeatureStats(int sampleSize) {
+    public FeatureStatsVo analyzeFeatureStats(int sampleSize, String endPeriod) {
         int size = Math.max(sampleSize, 1);
-        List<HistoryRecord> latest = getLatestRecords(size);
+        List<HistoryRecord> latest = getRecordsEndingAt(endPeriod, size);
         if (CollectionUtil.isEmpty(latest)) {
             throw new IllegalStateException("无可用的历史开奖记录");
         }
@@ -254,9 +276,9 @@ public class HistoryRecordServiceImpl implements IHistoryRecordService {
     }
 
     @Override
-    public PatternTrendVo analyzePatternTrend(String feature, String ratio, int sampleSize) {
+    public PatternTrendVo analyzePatternTrend(String feature, String ratio, int sampleSize, String endPeriod) {
         int size = Math.max(sampleSize, 1);
-        List<HistoryRecord> latest = getLatestRecords(size);
+        List<HistoryRecord> latest = getRecordsEndingAt(endPeriod, size);
         if (CollectionUtil.isEmpty(latest)) {
             throw new IllegalStateException("无可用的历史开奖记录");
         }
@@ -303,7 +325,8 @@ public class HistoryRecordServiceImpl implements IHistoryRecordService {
             for (String actual : actuals) {
                 optHitFlags.add(optRatio.equals(actual));
             }
-            PatternTrendStats optStats = LotteryPatternTrendUtils.analyze(optHitFlags, optP).getStats();
+            PatternTrendResult optResult = LotteryPatternTrendUtils.analyze(optHitFlags, optP);
+            PatternTrendStats optStats = optResult.getStats();
             options.add(PatternTrendVo.RatioOption.builder()
                 .ratio(optRatio)
                 .hitCount(optHits)
@@ -313,6 +336,9 @@ public class HistoryRecordServiceImpl implements IHistoryRecordService {
                 .currentOmission(optStats.getCurrentOmission())
                 .avgOmission(optStats.getAvgOmission())
                 .maxOmission(optStats.getMaxOmission())
+                .omissions(optResult.getOmissions())
+                .indexValues(optResult.getIndexValues())
+                .hitIntervals(hitIntervals(optHitFlags))
                 .build());
         }
 
@@ -327,6 +353,7 @@ public class HistoryRecordServiceImpl implements IHistoryRecordService {
             .latestPeriod(last.getPeriod())
             .latestWinning(formatWinning(last))
             .latestRatio(lastRatio)
+            .actuals(actuals)
             .stats(PatternTrendVo.Stats.builder()
                 .maxOmission(stats.getMaxOmission())
                 .avgOmission(stats.getAvgOmission())
@@ -339,6 +366,21 @@ public class HistoryRecordServiceImpl implements IHistoryRecordService {
                 .build())
             .ratioOptions(options)
             .build();
+    }
+
+    private static List<Integer> hitIntervals(List<Boolean> hits) {
+        List<Integer> intervals = new ArrayList<>();
+        int lastHit = -1;
+        for (int i = 0; i < hits.size(); i++) {
+            if (!Boolean.TRUE.equals(hits.get(i))) {
+                continue;
+            }
+            if (lastHit >= 0) {
+                intervals.add(i - lastHit);
+            }
+            lastHit = i;
+        }
+        return intervals;
     }
 
     private static List<Integer> redsOf(HistoryRecord r) {

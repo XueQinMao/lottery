@@ -44,6 +44,11 @@ public class BuyRecord {
 
     private String adjustedBlueBalls;
 
+    /**
+     * 胆码红球（逗号分隔，通常 3 个）；最终推荐包落库时写入。
+     */
+    private String coreRedBalls;
+
     private String redBalls;
 
     private String blueBalls;

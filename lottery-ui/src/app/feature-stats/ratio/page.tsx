@@ -12,15 +12,17 @@ function blueOddLabel(value: number) {
 
 export default function FeatureRatioPage() {
   const [sampleSize, setSampleSize] = useState(100);
+  const [endPeriod, setEndPeriod] = useState("");
+  const [appliedPeriod, setAppliedPeriod] = useState("");
   const [data, setData] = useState<FeatureStatsVo | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async (size: number) => {
+  const load = useCallback(async (size: number, period: string) => {
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchFeatureStats(size);
+      const result = await fetchFeatureStats(size, period || undefined);
       setData(result);
     } catch (e) {
       setData(null);
@@ -31,21 +33,24 @@ export default function FeatureRatioPage() {
   }, []);
 
   useEffect(() => {
-    void load(sampleSize);
-  }, [load, sampleSize]);
+    void load(sampleSize, appliedPeriod);
+  }, [load, sampleSize, appliedPeriod]);
 
   return (
     <main className="page">
       <header className="header">
         <h1>质合比 / 奇偶比统计</h1>
         <p className="sub">
-          质合比仅红球；奇偶比红蓝分开。Y 轴为个数（蓝球 1=奇 / 0=偶），虚线为均值
+          质合比仅红球；奇偶比红蓝分开。Y 轴为个数（蓝球 1=奇 / 0=偶），虚线为均值。截止期号空=最新。
         </p>
       </header>
 
       <FeatureStatsToolbar
         sampleSize={sampleSize}
         onSampleSizeChange={setSampleSize}
+        endPeriod={endPeriod}
+        onEndPeriodChange={setEndPeriod}
+        onApplyPeriod={() => setAppliedPeriod(endPeriod.trim())}
       />
 
       {loading && <div className="status">加载中...</div>}

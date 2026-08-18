@@ -25,6 +25,8 @@ public class BuyRecordVo {
 
     private String adjustedBlueBall;
 
+    private String coreRedBalls;
+
     private String redBalls;
 
     private String blueBalls;

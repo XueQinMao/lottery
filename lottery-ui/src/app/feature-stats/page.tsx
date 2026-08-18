@@ -8,15 +8,17 @@ import type { FeatureStatsVo } from "@/types/feature-stats";
 
 export default function FeatureSumSpanPage() {
   const [sampleSize, setSampleSize] = useState(100);
+  const [endPeriod, setEndPeriod] = useState("");
+  const [appliedPeriod, setAppliedPeriod] = useState("");
   const [data, setData] = useState<FeatureStatsVo | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async (size: number) => {
+  const load = useCallback(async (size: number, period: string) => {
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchFeatureStats(size);
+      const result = await fetchFeatureStats(size, period || undefined);
       setData(result);
     } catch (e) {
       setData(null);
@@ -27,19 +29,24 @@ export default function FeatureSumSpanPage() {
   }, []);
 
   useEffect(() => {
-    void load(sampleSize);
-  }, [load, sampleSize]);
+    void load(sampleSize, appliedPeriod);
+  }, [load, sampleSize, appliedPeriod]);
 
   return (
     <main className="page">
       <header className="header">
         <h1>红球和值 / 差值统计</h1>
-        <p className="sub">X 轴为开奖期号，虚线为样本均值（仅红球）</p>
+        <p className="sub">
+          X 轴为开奖期号，虚线为样本均值（仅红球）。截止期号空=最新。
+        </p>
       </header>
 
       <FeatureStatsToolbar
         sampleSize={sampleSize}
         onSampleSizeChange={setSampleSize}
+        endPeriod={endPeriod}
+        onEndPeriodChange={setEndPeriod}
+        onApplyPeriod={() => setAppliedPeriod(endPeriod.trim())}
       />
 
       {loading && <div className="status">加载中...</div>}
