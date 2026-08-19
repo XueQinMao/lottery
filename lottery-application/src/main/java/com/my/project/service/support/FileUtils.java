@@ -9,6 +9,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
@@ -42,7 +43,12 @@ public class FileUtils {
     }
 
     public static void readLine(String filePath, Consumer<String> contentConsumer){
-        try (Stream<String> lines = Files.lines(Paths.get(filePath))) {
+        Path path = Paths.get(filePath);
+        if (!Files.exists(path)) {
+            logger.error("文件 {} 不存在", filePath);
+            return;
+        }
+        try (Stream<String> lines = Files.lines(path)) {
             lines.parallel().forEach(contentConsumer);
         } catch (IOException e) {
             logger.error("文件 {} 行解析异常", filePath, e);

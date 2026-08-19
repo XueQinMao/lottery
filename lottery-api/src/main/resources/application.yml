@@ -32,10 +32,11 @@ mybatis-plus:
 lottery:
   llm:
     analysis:
-      # java：主线程 Java 统计直方图，形态取最高频；llm：11 个形态各开线程向 LLM 要下一期值/区间
-      engine: llm
+      # java：snapshot 的 indexValues 前后期差值趋势本地计算
+      # llm：压缩候选表后由大模型选值，再 applyGuard 硬校验
+      engine: java
       model: deepseek-chat
-      temperature: 0.9
+      temperature: 0.2
   model:
     path: E:\home\python\
     csv:

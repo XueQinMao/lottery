@@ -10,8 +10,9 @@ import java.util.List;
 /**
  * FeatureForecastBo
  *
- * <p>红球 11 维 + 蓝球 4 维下一期形态目标。默认由 Java 按命中间隔扩张/收缩评分产出
- * （稀有桶过滤、刚出不主推、红蓝自洽）；engine=llm 时先快照再逐维问 LLM，不合规则回退 Java。
+ * <p>红球 11 维 + 蓝球 4 维下一期形态目标。由 {@code lottery.llm.analysis.engine} 切换：
+ * {@code java} 按 snapshot 的 indexValues 前后期差值趋势本地计算（收缩倾向命中、扩张降低开出概率、平稳按间隔择时）；
+ * {@code llm} 用同一套候选表问大模型选值，再硬校验。
  *
  * @author 刘强
  * @version 2026/08/17
@@ -104,7 +105,7 @@ public class FeatureForecastBo {
         private Integer currentOmission;
         /** 距预计接入还剩几期：Ĝ − currentOmission */
         private Integer eta;
-        /** eta∈{0,1} 时为接入窗口 */
+        /** eta∈{0,1}，或长冷回补后 1～2 期，为接入窗口 */
         private Boolean dueWindow;
         /** 桶综合得分 */
         private Double score;

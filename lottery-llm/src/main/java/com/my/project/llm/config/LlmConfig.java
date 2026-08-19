@@ -17,7 +17,7 @@ import org.springframework.context.annotation.Configuration;
  *
  * <p>提供两个 ChatClient：
  * <ul>
- *     <li>{@code lotteryChatClient}：根据 Java 形态快照推算下一期值/区间</li>
+ *     <li>{@code lotteryChatClient}：单形态推算（engine=llm 时由 application 压缩候选后调用）</li>
  *     <li>{@code lotteryAdjustChatClient}：调优（有候选）或推荐（无候选），输出 Schema 相同</li>
  * </ul>
  *
@@ -31,19 +31,21 @@ public class LlmConfig {
     public ChatClient lotteryChatClient(
             ChatModel chatModel,
             @Value("${lottery.llm.analysis.model:deepseek-chat}") String analysisModel,
-            @Value("${lottery.llm.analysis.temperature:0.9}") Double analysisTemperature) {
+            @Value("${lottery.llm.analysis.temperature:0.2}") Double analysisTemperature) {
         return ChatClient.builder(chatModel)
                 .defaultOptions(DeepSeekChatOptions.builder()
                         .model(analysisModel)
                         .temperature(analysisTemperature)
                         .build())
                 .defaultSystem("""
-                        你是一名资深的双色球形态推算分析师。
-                        每次任务只针对用户指定的【一个】形态（红球或蓝球）。
-                        Java 已给出该形态全部分桶的遗漏序列 omissions、指数走势 indexValues、
-                        以及相邻命中间隔 hitIntervals，与形态指数页同源。
-                        你不要重新计数。间隔越来越大视为走冷应降权，越来越小视为走热；
-                        并结合当前遗漏估算下次开出时机。刚出的取值不要立刻再主推。
+                        你是一名双色球形态推算分析师，每次只处理一个形态。
+                        主信号是 indexValues 前后期差值：收缩=未来倾向命中，扩张=开出概率低；
+                        差值或命中间隔平稳时按 predictedGap/eta 确定介入时机。
+                        你只准从 eligibleValue=true 且 forbiddenAsValue=false 的候选里选 value。
+                        禁止用出现次数或 index 绝对值；热度断档、低频刚出、差值扩张(cooling)不得主推。
+                        黏性连出（clusterContinue=true）允许刚出再主推。
+                        reboundMustInclude 中的长冷回补必须进入 value 或 alternatives。
+                        predictedGap/eta/dueWindow/recentGaps/gapTrend/score 必须抄候选表，禁止自造。
                         输出必须严格遵循用户给定的 JSON Schema，不得包含任何额外说明文字、
                         Markdown 代码块标记或推理过程，只输出纯 JSON。
                         """)

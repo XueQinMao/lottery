@@ -1,5 +1,6 @@
 package com.my.project.api.controller;
 
+import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.my.project.api.pojo.resp.Result;
 import com.my.project.service.history.IHistoryRecordService;
@@ -102,7 +103,10 @@ public class HistoryRecordController {
         @RequestParam(required = false, defaultValue = "100") int sampleSize,
         @RequestParam(required = false) String endPeriod) {
         try {
-            return Result.success(historyRecordService.analyzePatternTrend(feature, ratio, sampleSize, endPeriod));
+            PatternTrendVo patternTrendVo =
+                historyRecordService.analyzePatternTrend(feature, ratio, sampleSize, endPeriod);
+            System.out.println(JSON.toJSONString(patternTrendVo));
+            return Result.success(patternTrendVo);
         } catch (Exception e) {
             return Result.error(e.getMessage());
         }

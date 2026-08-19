@@ -49,7 +49,7 @@ public class LotteryAnalysisRespBo {
 
     /**
      * 形态推算（调优/推荐使用）。
-     * <p>由 {@code lottery.llm.analysis.engine} 决定：java=间隔评分，llm=逐维 LLM。
+     * <p>由 {@code lottery.llm.analysis.engine} 决定：java=indexValues 差值趋势本地计算，llm=逐维大模型选值。
      */
     private FeatureForecastBo featureForecast;
 

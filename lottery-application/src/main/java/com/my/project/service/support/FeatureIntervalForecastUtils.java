@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
  *
  * <p>基于形态「相邻两次命中间隔」扩张/收缩评分：
  * <ul>
- *   <li>Java 主路径 {@link #forecast}：选桶 + 稀有过滤 + 刚出不主推 + 红/蓝自洽</li>
+ *   <li>Java 主路径 {@link #forecast}：选桶 + 稀有过滤 + 低频刚出不主推（黏性连出除外）+ 红/蓝自洽</li>
  *   <li>LLM 快照 {@link #buildSnapshot}；回填/纠偏 {@link #enrichFromSnapshot}</li>
  * </ul>
  *
@@ -88,8 +88,9 @@ public final class FeatureIntervalForecastUtils {
         }
         root.put("candidates", candidates);
         root.put("hint",
-            "value 必须选 eligibleValue=true 的桶；禁止刚出(isLast/currentOmission=0)、"
+            "value 必须选 eligibleValue=true 的桶；禁止低频刚出(currentOmission=0 且非黏性连出)、"
                 + "rare=true、gapTrend=unknown 且间隔不足的桶作为主推；"
+                + "均漏短且近间隔1-2的黏性桶允许刚出再主推；"
                 + "优先 dueWindow=true 且 heating/stable；跨度/尾数/区个数可将相邻高分桶合并为闭区间");
         return JSON.toJSONString(root);
     }
@@ -152,7 +153,8 @@ public final class FeatureIntervalForecastUtils {
 
         FeatureForecastBo forecast = toBo(items);
         forecast.setBasis(String.format(Locale.ROOT,
-            "Java间隔评分（最近%d期）：走冷/走热+eta；禁止刚出重复主推、稀有桶与间隔样本不足进主推；"
+            "Java间隔评分（最近%d期）：走冷/走热+eta；低频刚出不主推，黏性连出除外；"
+                + "稀有桶与间隔样本不足不进主推；"
                 + "红球三区对齐区个数，和值与跨度互斥时回退常态和值；蓝球以大小奇偶对齐奇偶/大小。",
             chronological.size()));
         return forecast;
@@ -199,16 +201,25 @@ public final class FeatureIntervalForecastUtils {
         if (b == null) {
             return false;
         }
-        if (b.currentOmission() == 0) {
+        if (isRareBucket(kind, b.ratio(), b.prior())) {
             return false;
         }
-        if (isRareBucket(kind, b.ratio(), b.prior())) {
+        if (b.currentOmission() == 0 && !clusterContinue(b.currentOmission(), b.recentGaps(), b.gapTrend())) {
             return false;
         }
         if (b.recentGaps() == null || b.recentGaps().size() < MIN_GAPS_FOR_VALUE) {
             return false;
         }
         return true;
+    }
+
+    static boolean clusterContinue(int currentOmission, List<Integer> recentGaps, String gapTrend) {
+        if (currentOmission != 0 || "cooling".equals(gapTrend) || recentGaps == null || recentGaps.size() < 2) {
+            return false;
+        }
+        double med = median(recentGaps);
+        long shortHits = recentGaps.stream().filter(g -> g != null && g <= 2).count();
+        return med <= 2.0 && shortHits >= Math.max(2, (recentGaps.size() + 1) / 2);
     }
 
     static boolean isRareBucket(FeatureKind kind, String ratio, double prior) {
@@ -389,9 +400,11 @@ public final class FeatureIntervalForecastUtils {
         int eta = (int) Math.round(predictedGap) - currentOmission;
         boolean sampleOk = recentGaps.size() >= MIN_GAPS_FOR_VALUE;
         boolean justAppeared = currentOmission == 0;
-        boolean dueWindow = sampleOk && !justAppeared && (eta == 0 || eta == 1);
+        boolean clusterContinue = clusterContinue(currentOmission, recentGaps, gapTrend);
+        boolean dueWindow = sampleOk && (clusterContinue || (!justAppeared && (eta == 0 || eta == 1)));
 
-        double due = dueScore(currentOmission, predictedGap, eta, gapTrend, sampleOk, justAppeared);
+        double due = dueScore(currentOmission, predictedGap, eta, gapTrend, sampleOk, justAppeared,
+            clusterContinue);
         double heat = switch (gapTrend) {
             case "heating" -> 1.15;
             case "cooling" -> 0.85;
@@ -400,7 +413,7 @@ public final class FeatureIntervalForecastUtils {
         double priorFactor = 0.5 + 0.5 * normalizePrior(prior, kind);
         double score = due * heat * priorFactor;
         if (justAppeared) {
-            score *= 0.35;
+            score *= clusterContinue ? 1.15 : 0.35;
         }
         if (!sampleOk) {
             score *= 0.5;
@@ -470,7 +483,10 @@ public final class FeatureIntervalForecastUtils {
     }
 
     static double dueScore(int currentOmission, double predictedGap, int eta, String gapTrend,
-        boolean sampleOk, boolean justAppeared) {
+        boolean sampleOk, boolean justAppeared, boolean clusterContinue) {
+        if (clusterContinue) {
+            return 1.05;
+        }
         if (justAppeared || !sampleOk) {
             return 0.15;
         }
