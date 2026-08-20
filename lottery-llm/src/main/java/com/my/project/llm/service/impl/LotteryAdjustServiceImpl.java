@@ -31,7 +31,7 @@ import java.util.Set;
 @Service
 public class LotteryAdjustServiceImpl implements ILotteryAdjustService {
 
-    private static final int DEFAULT_RECOMMEND_COUNT = 3;
+    private static final int DEFAULT_RECOMMEND_COUNT = 2;
     private static final int MAX_RECOMMEND_COUNT = 10;
 
     private final ChatClient lotteryAdjustChatClient;

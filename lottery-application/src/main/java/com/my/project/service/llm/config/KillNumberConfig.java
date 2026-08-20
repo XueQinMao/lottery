@@ -290,7 +290,7 @@ public class KillNumberConfig {
         /**
          * 趋势杀号红球上限：按趋势分排序后最多取 Top-N。
          */
-        private int maxTrendKillRed = 8;
+        private int maxTrendKillRed = 10;
 
         /**
          * 趋势杀号蓝球上限：按趋势分排序后最多取 Top-N。

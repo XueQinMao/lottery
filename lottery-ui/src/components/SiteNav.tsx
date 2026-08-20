@@ -6,6 +6,7 @@ import {
   Brain,
   ChartLine,
   SidebarSimple,
+  Sparkle,
   SquaresFour,
   Table,
 } from "@phosphor-icons/react";
@@ -34,6 +35,12 @@ const NAV_ITEMS = [
     label: "LLM 分析",
     match: (p: string) => p.startsWith("/llm-analysis"),
     Icon: Brain,
+  },
+  {
+    href: "/llm-recommend",
+    label: "LLM推荐",
+    match: (p: string) => p.startsWith("/llm-recommend"),
+    Icon: Sparkle,
   },
 ];
 

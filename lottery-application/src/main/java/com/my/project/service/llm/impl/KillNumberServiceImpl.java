@@ -93,9 +93,9 @@ public class KillNumberServiceImpl implements IKillNumberService {
         //默认吧最近一期的都杀掉
         hardKillBlue.add(
             KillItemBo.builder().ball(defaultKillNumbers.getBlueBall()).score(1.0).reason("上期开出").build());
-        defaultKillNumbers.getRedBalls().stream()
-            .map(redball -> KillItemBo.builder().ball(redball).score(1.0).reason("上期开出").build())
-            .forEach(hardKillRed::add);
+//        defaultKillNumbers.getRedBalls().stream()
+//            .map(redball -> KillItemBo.builder().ball(redball).score(1.0).reason("上期开出").build())
+//            .forEach(hardKillRed::add);
 
         KillNumberResultBo result = KillNumberResultBo.builder().hardKillRed(hardKillRed).hardKillBlue(hardKillBlue)
             .basis(buildBasis(sampleSize)).build();

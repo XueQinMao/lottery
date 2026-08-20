@@ -2,13 +2,16 @@ package com.my.project.api.controller;
 
 import com.my.project.api.pojo.req.LLmAnalysisReq;
 import com.my.project.api.pojo.resp.Result;
-import com.my.project.llm.bo.LotteryAdjustRespBo;
+import com.my.project.llm.bo.LotteryAdjustViewBo;
 import com.my.project.llm.bo.LotteryAnalysisRespBo;
 import com.my.project.service.llm.ILotteryFeatureAnalysisService;
 import com.my.project.service.llm.pojo.dto.LLmAdjustDto;
+import com.my.project.service.llm.pojo.vo.AdjustHistoryFileVo;
 import org.apache.commons.collections4.CollectionUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 /**
  * LotteryLlmController
@@ -46,12 +49,15 @@ public class LotteryLlmController {
      * 调优 / 推荐入口。
      * <ul>
      *     <li>drawRecords 非空 → 调优模式</li>
-     *     <li>drawRecords 为空 → 推荐模式，按 recommendCount（默认 3，上限 10）生成号码组</li>
+     *     <li>drawRecords 为空或不传 → 推荐模式，仅按 count（默认 2，上限 10）生成号码组</li>
      * </ul>
      */
     @PostMapping("/adjust")
-    public Result<LotteryAdjustRespBo> analyzeByRedBalls(@RequestBody LLmAnalysisReq req) {
+    public Result<LotteryAdjustViewBo> analyzeByRedBalls(@RequestBody(required = false) LLmAnalysisReq req) {
         try {
+            if (req == null) {
+                req = new LLmAnalysisReq();
+            }
             var list = CollectionUtils.emptyIfNull(req.getDrawRecords()).stream().map(
                 d -> LLmAdjustDto.DrawRecord.builder().redballs(d.getRedballs()).blueball(d.getBlueball())
                     .build()).toList();
@@ -64,8 +70,33 @@ public class LotteryLlmController {
         }
     }
 
+    /**
+     * 最近推荐文件名列表（按修改时间倒序）。
+     */
+    @GetMapping("/adjust/history")
+    public Result<List<AdjustHistoryFileVo>> listAdjustHistory(
+            @RequestParam(required = false, defaultValue = "20") int limit) {
+        try {
+            return Result.success(lotteryFeatureAnalysisService.listAdjustHistory(limit));
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    /**
+     * 按文件名读取推荐详情。
+     */
+    @GetMapping("/adjust/history/{fileName:.+}")
+    public Result<LotteryAdjustViewBo> loadAdjustHistory(@PathVariable String fileName) {
+        try {
+            return Result.success(lotteryFeatureAnalysisService.loadAdjustHistory(fileName));
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
     @GetMapping("/adjust/{count}/{isTopN}")
-    public Result<LotteryAdjustRespBo> adjustFromCacheTop(@PathVariable Integer count, @PathVariable boolean isTopN) {
+    public Result<LotteryAdjustViewBo> adjustFromCacheTop(@PathVariable Integer count, @PathVariable boolean isTopN) {
         try {
             return Result.success(lotteryFeatureAnalysisService.adjust(count, isTopN));
         } catch (Exception e) {

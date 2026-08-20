@@ -562,13 +562,7 @@ public final class FeatureIntervalForecastUtils {
 
     private static void reconcileRed(EnumMap<FeatureKind, FeatureForecastItem> items,
         List<DrawRecord> chronological) {
-        FeatureForecastItem threeZone = items.get(FeatureKind.THREE_ZONE);
-        if (threeZone != null && threeZone.getValue() != null && threeZone.getValue().matches("\\d:\\d:\\d")) {
-            String[] p = threeZone.getValue().split(":");
-            alignZoneCount(items, FeatureKind.ZONE1_COUNT, p[0], chronological, threeZone.getValue());
-            alignZoneCount(items, FeatureKind.ZONE2_COUNT, p[1], chronological, threeZone.getValue());
-            alignZoneCount(items, FeatureKind.ZONE3_COUNT, p[2], chronological, threeZone.getValue());
-        }
+        // 三区比主推命中率远低于区个数；用它去改写一/二/三区个数会把对的个数拉错。
         reconcileSumAndSpan(items, chronological);
     }
 

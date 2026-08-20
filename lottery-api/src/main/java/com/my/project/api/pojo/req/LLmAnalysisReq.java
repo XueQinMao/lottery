@@ -16,7 +16,8 @@ public class LLmAnalysisReq {
     private List<DrawRecord> drawRecords;
 
     /**
-     * 推荐号码组数量（仅 drawRecords 为空时生效）。
+     * 推荐号码组数量（仅 drawRecords 为空或不传时生效）。
+     * <p>默认 2，上限 10。
      */
     private Integer count;
 

@@ -43,7 +43,7 @@ public class LotteryAdjustReqBo {
 
     /**
      * 推荐号码组数量（仅 tickets 为空时生效）。
-     * <p>默认 3，上限由服务侧截断（如 ≤10）。
+     * <p>默认 2，上限由服务侧截断（如 ≤10）。
      */
     private Integer count;
 

@@ -46,9 +46,8 @@ public final class LotteryAnalysisPrompt {
             【硬约束——违反则答案无效】
             1. value 必须是 candidates 里 eligibleValue=true 且 forbiddenAsValue=false 的 ratio。
             2. 禁止把 forbiddenAsValue 列表中的取值当作 value（热度断档 heatBroken；低频刚出）。
-               例外：clusterContinue=true 的黏性桶（均漏短、近间隔1-2）允许刚出再主推。
-            3. 主信号是 indexValues 前后期差值：收缩(heating)=未来倾向命中；扩张(cooling)=开出概率低；
-               差值或命中间隔平稳(stable)时按 predictedGap/eta 确定介入时机。禁止用 hitCount、index 绝对值决定主推。
+               例外：clusterContinue=true，或理论先验接近最高的众数桶刚出，允许再主推。
+            3. 主推优先理论先验；指数差值只做轻量加减分。禁止用 hitCount、index 绝对值或 eta 到期把低频桶抬成主推。
             4. reboundMustInclude 非空时：这些长冷回补桶必须出现在 value 或 alternatives 中。
             5. 优先 dueWindow=true 或 reboundWindow=true 或 indexDiffTrend=heating；cooling 不得主推（除非 reboundWindow）。
             6. predictedGap、eta、dueWindow、recentGaps、gapTrend、score 必须原样抄自所选候选，禁止自造。

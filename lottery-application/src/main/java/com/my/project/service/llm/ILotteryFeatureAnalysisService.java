@@ -1,8 +1,11 @@
 package com.my.project.service.llm;
 
-import com.my.project.llm.bo.LotteryAdjustRespBo;
+import com.my.project.llm.bo.LotteryAdjustViewBo;
 import com.my.project.llm.bo.LotteryAnalysisRespBo;
 import com.my.project.service.llm.pojo.dto.LLmAdjustDto;
+import com.my.project.service.llm.pojo.vo.AdjustHistoryFileVo;
+
+import java.util.List;
 
 /**
  * ILotteryFeatureAnalysisService
@@ -27,12 +30,22 @@ public interface ILotteryFeatureAnalysisService {
      * @param dto
      * @return
      */
-    LotteryAdjustRespBo adjust(LLmAdjustDto dto);
+    LotteryAdjustViewBo adjust(LLmAdjustDto dto);
 
     /**
      * 从缓存中选取中奖率top count的组去预测号码
      * @param count
      * @return
      */
-    LotteryAdjustRespBo adjust(Integer count, boolean isTopN);
+    LotteryAdjustViewBo adjust(Integer count, boolean isTopN);
+
+    /**
+     * 列出最近的推荐结果文件名（按修改时间倒序）。
+     */
+    List<AdjustHistoryFileVo> listAdjustHistory(int limit);
+
+    /**
+     * 按文件名读取推荐结果详情。
+     */
+    LotteryAdjustViewBo loadAdjustHistory(String fileName);
 }

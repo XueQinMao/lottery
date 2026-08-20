@@ -18,9 +18,11 @@ import com.my.project.service.llm.ILotteryFeatureAnalysisService;
 import com.my.project.service.llm.IThreeZoneRatioPredictService;
 import com.my.project.service.llm.cache.LotteryAnalysisMultiLevelCache;
 import com.my.project.service.llm.pojo.dto.LLmAdjustDto;
+import com.my.project.service.llm.pojo.vo.AdjustHistoryFileVo;
 import com.my.project.service.predict.pojo.vo.PredictCacheVo;
 import com.my.project.service.predict.IPredictCacheService;
 import com.my.project.service.selection.ISmartSelectService;
+import com.my.project.service.support.FeatureForecastHitUtils;
 import com.my.project.service.support.FeatureIntervalForecastUtils;
 import com.my.project.service.support.LotteryFeatureTrendUtils;
 import com.my.project.service.support.LotteryFeatureTrendUtils.FeatureKind;
@@ -37,6 +39,8 @@ import org.springframework.util.Assert;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -76,6 +80,9 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
     /** 间隔节奏预测最少样本；不足时用全量，最多取最近 100 期 */
     private static final int INTERVAL_FORECAST_MAX = 100;
     private static final int STATS_SAMPLE_SIZE = 30;
+    private static final int ADJUST_HISTORY_MAX = 20;
+    private static final DateTimeFormatter ADJUST_FILE_TIME =
+        DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
     @Value("${lottery.llm.analysis.engine:java}")
     private String analysisEngine;
@@ -219,7 +226,9 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
         FeatureForecastBo forecast = FeatureIntervalForecastUtils.toBo(items);
         String engineHint = useLlm ? "大模型从压缩候选表选值，applyGuard 硬校验；" : "本地按 indexValues 差值趋势评分；";
         forecast.setBasis(String.format(Locale.ROOT,
-            "红球11维+蓝球4维：由形态指数 indexValues（最早→最新）前后期差值趋势评分；%s" + "差值收缩=未来倾向命中，差值扩张=开出该特征概率降低；" + "差值或命中间隔平稳则按节奏估介入时机（G/eta）。低频刚出与热度断档不主推；" + "均漏短且近间隔1-2的黏性桶允许连出。样本%d期。",
+            "红球11维+蓝球4维：主推贴理论众数，指数差值只做轻量加减分；%s"
+                + "众数刚出仍可主推；低频刚出与热度断档不主推；"
+                + "跨度/和值/区个数相邻高分合并为区间。样本%d期。",
             engineHint, forecastRecords.size()));
         return forecast;
     }
@@ -318,7 +327,7 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
     }
 
     @Override
-    public LotteryAdjustRespBo adjust(LLmAdjustDto dto) {
+    public LotteryAdjustViewBo adjust(LLmAdjustDto dto) {
         var respBo = analyzeLatest(100);
         var tickets = CollectionUtils.emptyIfNull(dto.getDrawRecords()).stream().map(
                 d -> LotteryAdjustReqBo.PredictTicket.builder().redBalls(d.getRedballs()).blueBall(d.getBlueball()).build())
@@ -328,11 +337,12 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
                 .count(dto.getCount()).build();
         var adjust = lotteryAdjustService.adjust(adjustReqBo);
         AdjustCompleteEvent.of(this, adjust).publish();
-        return adjust;
+        return persistAdjustView(FeatureForecastHitUtils.toView(adjust, respBo.getFeatureForecast()),
+            dto.getCount(), false);
     }
 
     @Override
-    public LotteryAdjustRespBo adjust(Integer count, boolean isTopN) {
+    public LotteryAdjustViewBo adjust(Integer count, boolean isTopN) {
         count = Math.min(count, 10);
         Map<String, ModelPredictOutputBo> predictCacheMaps = null;
         if (isTopN) {
@@ -356,7 +366,56 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
             LotteryAdjustReqBo.builder().analysisReportJson(JSONObject.toJSONString(respBo)).tickets(tickets).build();
         var adjust = lotteryAdjustService.adjust(adjustReqBo);
         AdjustCompleteEvent.of(this, adjust).publish();
-        return adjust;
+        return persistAdjustView(FeatureForecastHitUtils.toView(adjust, respBo.getFeatureForecast()), count, isTopN);
+    }
+
+    @Override
+    public List<AdjustHistoryFileVo> listAdjustHistory(int limit) {
+        int size = Math.max(1, Math.min(limit, ADJUST_HISTORY_MAX));
+        File dir = adjustHistoryDir();
+        File[] files = dir.listFiles((d, name) -> isSafeAdjustFileName(name) && new File(d, name).isFile());
+        if (files == null || files.length == 0) {
+            return List.of();
+        }
+        return Arrays.stream(files).sorted(Comparator.comparingLong(File::lastModified).reversed()).limit(size)
+            .map(f -> AdjustHistoryFileVo.builder().fileName(f.getName()).lastModified(f.lastModified())
+                .size(f.length()).build())
+            .toList();
+    }
+
+    @Override
+    public LotteryAdjustViewBo loadAdjustHistory(String fileName) {
+        Assert.isTrue(isSafeAdjustFileName(fileName), "非法推荐文件名");
+        File file = new File(adjustHistoryDir(), fileName);
+        Assert.isTrue(file.isFile(), "推荐文件不存在");
+        LotteryAdjustViewBo view = JSON.parseObject(FileUtil.readString(file, StandardCharsets.UTF_8),
+            LotteryAdjustViewBo.class);
+        Assert.notNull(view, "推荐文件解析失败");
+        return view;
+    }
+
+    private LotteryAdjustViewBo persistAdjustView(LotteryAdjustViewBo view, Integer count, boolean isTopN) {
+        try {
+            String name = String.format("adjust_%s_c%s_topN%s.json", ADJUST_FILE_TIME.format(LocalDateTime.now()),
+                count == null ? 0 : count, isTopN);
+            FileUtil.writeString(JSON.toJSONString(view), new File(adjustHistoryDir(), name), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            log.warn("保存推荐结果文件失败", e);
+        }
+        return view;
+    }
+
+    private File adjustHistoryDir() {
+        File dir = new File(lotteryModelConfig.getPath(), "adjust");
+        if (!dir.exists() && !dir.mkdirs()) {
+            log.warn("创建推荐结果目录失败: {}", dir.getAbsolutePath());
+        }
+        return dir;
+    }
+
+    private static boolean isSafeAdjustFileName(String fileName) {
+        return fileName != null && !fileName.contains("..") && !fileName.contains("/") && !fileName.contains("\\")
+            && fileName.matches("adjust_[\\w.-]+\\.json");
     }
 
     private LotteryAnalysisReqBo.DrawRecord toDrawRecord(HistoryRecord record) {

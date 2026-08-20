@@ -33,6 +33,11 @@ const PAGES: { match: (pathname: string) => boolean; title: string; sub: string 
       title: "LLM 分析",
       sub: "基于最近样本的杀号、冷热与形态推算",
     },
+    {
+      match: (p) => p.startsWith("/llm-recommend"),
+      title: "LLM推荐",
+      sub: "生成后写入后台 JSON；最近推荐先拉文件名，点击再看详情",
+    },
   ];
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
