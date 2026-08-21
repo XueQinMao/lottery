@@ -17,7 +17,6 @@ import com.my.project.service.predict.pojo.vo.PredictHitRecordVo;
 import com.my.project.service.selection.ISmartSelectService;
 import com.my.project.service.support.BatchQueryUtils;
 import com.my.project.service.support.FileUtils;
-import com.my.project.service.support.SsqPrizeCheckerUtils;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
@@ -27,7 +26,6 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.util.Assert;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -137,9 +135,8 @@ public class PredictHitRecordServiceImpl implements IPredictHitRecordService {
         return record -> {
             List<Integer> resultRedBalls =
                 Arrays.stream(record.getRedBalls().split(",")).map(Integer::parseInt).toList();
-            PrizeLevelEnum prizeLevel =
-                SsqPrizeCheckerUtils.checkPrize(integers, special, resultRedBalls, List.of(record.getBlueBall()));
-            if (!PrizeLevelEnum.getHitPrizeLevels().contains(prizeLevel)) {
+            PrizeLevelEnum prizeLevel =PrizeLevelEnum.checkPrize(integers, special, resultRedBalls, List.of(record.getBlueBall()));
+            if (!prizeLevel.isHit()) {
                 return null;
             }
             log.info("命中一次 {} 等奖",prizeLevel.name());

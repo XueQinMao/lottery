@@ -28,7 +28,7 @@ import java.util.concurrent.CompletableFuture;
 @Component
 @AllArgsConstructor
 @Slf4j
-public class ApplicationReadyEventListener {
+public abstract class ApplicationReadyEventListener {
 
     private final StartupChainAssembler chainCombination;
 
@@ -56,4 +56,6 @@ public class ApplicationReadyEventListener {
             predictCacheService.addCache(split[0], JSON.parseObject(split[1], ModelPredictOutputBo.class));
         });
     }
+
+    public abstract void onApplicationEvent(ApplicationReadyEvent event);
 }

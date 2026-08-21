@@ -1,24 +1,29 @@
 package com.my.project.service;
 
+import cn.hutool.core.io.FileUtil;
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
 import com.my.project.llm.bo.FeatureForecastBo;
-import com.my.project.llm.bo.LotteryAnalysisReqBo;
+import com.my.project.llm.bo.KillNumberResultBo;
 import com.my.project.llm.bo.LotteryAdjustViewBo.FeatureHit;
+import com.my.project.llm.bo.LotteryAnalysisReqBo;
 import com.my.project.persistence.entity.HistoryRecord;
 import com.my.project.persistence.repository.IHistoryRecordRepository;
+import com.my.project.python.bo.ModelPredictOutputBo;
+import com.my.project.service.config.LotteryModelConfig;
 import com.my.project.service.llm.impl.LotteryFeatureAnalysisServiceImpl;
 import com.my.project.service.support.FeatureForecastHitUtils;
+import com.my.project.service.support.FileUtils;
 import com.my.project.service.support.LotteryFeatureTrendUtils.FeatureKind;
 import jakarta.annotation.Resource;
 import org.apache.commons.collections4.CollectionUtils;
 import org.junit.jupiter.api.Test;
+import org.junit.platform.commons.util.StringUtils;
 import org.springframework.boot.test.context.SpringBootTest;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
+import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -35,6 +40,10 @@ public class LotteryFeatureAnalysisServiceTest {
 
     @Resource
     private LotteryFeatureAnalysisServiceImpl lotteryFeatureAnalysisService;
+
+    @Resource
+    private LotteryModelConfig lotteryModelConfig;
+
 
     /**
      * 这个单侧不要删除 后面要一直用
@@ -192,6 +201,41 @@ public class LotteryFeatureAnalysisServiceTest {
         }
 
         System.out.println(md);
+    }
+
+    @Test
+    public void test_kill(){
+        List<HistoryRecord> window = historyRecordRepository.lambdaQuery()
+            .orderByDesc(HistoryRecord::getOpenDate)
+            .last("limit 5")
+            .list();
+        for (int i = window.size()-1; i >= 0; i--) {
+            HistoryRecord end = window.get(i);
+            List<Integer> nums =
+                List.of(end.getNum1(), end.getNum2(), end.getNum3(), end.getNum4(), end.getNum5(), end.getNum6());
+            kill(Integer.valueOf(end.getPeriod()), 12, nums, end.getSpecial());
+            kill(Integer.valueOf(end.getPeriod()), 14, nums, end.getSpecial());
+            kill(Integer.valueOf(end.getPeriod()), 16, nums, end.getSpecial());
+            kill(Integer.valueOf(end.getPeriod()), 18, nums, end.getSpecial());
+            kill(Integer.valueOf(end.getPeriod()), 20, nums, end.getSpecial());
+            System.out.println("***************************************************");
+
+        }
+    }
+
+    private void kill(Integer period, Integer killNumber, List<Integer> winReadBalls, Integer winBlueBall){
+        FileUtils.readLine(lotteryModelConfig.getPath() + "/kill/kill_" + (period-1) + "_"+killNumber+".json", content -> {
+            if(StringUtils.isBlank(content)){
+                return;
+            }
+            var killNumberResultBo = JSONObject.parseObject(content, KillNumberResultBo.class);
+            List<Integer> redKills = CollectionUtils.emptyIfNull(killNumberResultBo.getHardKillRed()).stream()
+                .map(KillNumberResultBo.KillItemBo::getBall).toList();
+            List<Integer> intersection = (List<Integer>) CollectionUtils.intersection(winReadBalls, redKills);
+            List<Integer> killBlues = CollectionUtils.emptyIfNull(killNumberResultBo.getHardKillBlue()).stream()
+                .map(KillNumberResultBo.KillItemBo::getBall).toList();
+            System.out.println("第"+period+"期红球杀"+killNumber+"，吴杀率："+intersection.size()%killNumber+"   蓝球误杀："+killBlues.contains(winBlueBall));
+        });
     }
 
     private static String pct(int hit, int total) {

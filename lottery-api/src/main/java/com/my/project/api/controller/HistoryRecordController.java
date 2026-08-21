@@ -62,7 +62,9 @@ public class HistoryRecordController {
         @RequestParam(required = false, defaultValue = "100") int sampleSize,
         @RequestParam(required = false) String endPeriod) {
         try {
-            return Result.success(historyRecordService.analyzeTrend(ballType, ball, sampleSize, endPeriod));
+            TrendAnalysisVo trendAnalysisVo = historyRecordService.analyzeTrend(ballType, ball, sampleSize, endPeriod);
+            System.out.println(JSON.toJSONString(trendAnalysisVo));
+            return Result.success(trendAnalysisVo);
         } catch (Exception e) {
             return Result.error(e.getMessage());
         }
@@ -79,7 +81,9 @@ public class HistoryRecordController {
         @RequestParam(required = false, defaultValue = "100") int sampleSize,
         @RequestParam(required = false) String endPeriod) {
         try {
-            return Result.success(historyRecordService.analyzeFeatureStats(sampleSize, endPeriod));
+            FeatureStatsVo featureStatsVo = historyRecordService.analyzeFeatureStats(sampleSize, endPeriod);
+            System.out.println(JSON.toJSONString(featureStatsVo));
+            return Result.success(featureStatsVo);
         } catch (Exception e) {
             return Result.error(e.getMessage());
         }

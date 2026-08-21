@@ -107,7 +107,6 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
         }
         String period = latest.getFirst().getPeriod();
         String cacheKey = CACHE_KEY_PREFIX + period + sampleSize;
-        //        String cacheKey = CACHE_KEY_PREFIX + period + UUID.randomUUID().toString();
         var respBo = multiLevelCache.get(cacheKey, k -> doAnalyze(count));
         Assert.notNull(respBo, "特征数据获取异常，请稍后重试");
         return respBo;

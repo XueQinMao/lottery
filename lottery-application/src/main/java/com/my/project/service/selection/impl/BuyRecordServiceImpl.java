@@ -9,7 +9,6 @@ import com.my.project.service.selection.IBuyRecordService;
 import com.my.project.service.selection.enums.BuyRecordTypeEnums;
 import com.my.project.service.selection.pojo.dto.BuyRecordDto;
 import com.my.project.service.selection.pojo.vo.BuyRecordVo;
-import com.my.project.service.support.SsqPrizeCheckerUtils;
 import lombok.AllArgsConstructor;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -140,30 +139,30 @@ public class BuyRecordServiceImpl implements IBuyRecordService {
                 .redBalls(r.getRedBalls()).blueBalls(r.getBlueBalls()).build())
             .filter(vo -> {
                 boolean oriHit = StringUtils.isNotBlank(vo.getOriRedBalls()) && StringUtils.isNotBlank(vo.getOriBlueBall())
-                    && SsqPrizeCheckerUtils.checkPrize(integers, latestRecords.getSpecial(),
+                    && PrizeLevelEnum.checkPrize(integers, latestRecords.getSpecial(),
                     convertFunc.apply(vo.getOriRedBalls()), convertFunc.apply(vo.getOriBlueBall())).isHit();
                 boolean adjustHit = StringUtils.isNotBlank(vo.getAdjustedRedBalls())
                     && StringUtils.isNotBlank(vo.getAdjustedBlueBall())
-                    && SsqPrizeCheckerUtils.checkPrize(integers, latestRecords.getSpecial(),
+                    && PrizeLevelEnum.checkPrize(integers, latestRecords.getSpecial(),
                     convertFunc.apply(vo.getAdjustedRedBalls()), convertFunc.apply(vo.getAdjustedBlueBall())).isHit();
                 boolean buyHit = StringUtils.isNotBlank(vo.getRedBalls()) && StringUtils.isNotBlank(vo.getBlueBalls())
-                    && SsqPrizeCheckerUtils.checkPrize(integers, latestRecords.getSpecial(),
+                    && PrizeLevelEnum.checkPrize(integers, latestRecords.getSpecial(),
                     convertFunc.apply(vo.getRedBalls()), convertFunc.apply(vo.getBlueBalls())).isHit();
                 return oriHit || adjustHit || buyHit;
         }).map(vo -> {
             PrizeLevelEnum oriHitPrizeLevels = StringUtils.isNotBlank(vo.getOriRedBalls())
                 && StringUtils.isNotBlank(vo.getOriBlueBall())
-                ? SsqPrizeCheckerUtils.checkPrize(integers, latestRecords.getSpecial(),
+                ? PrizeLevelEnum.checkPrize(integers, latestRecords.getSpecial(),
                 convertFunc.apply(vo.getOriRedBalls()), convertFunc.apply(vo.getOriBlueBall()))
                 : PrizeLevelEnum.NO_PRIZE;
             PrizeLevelEnum adjustHitPrizeLevels = StringUtils.isNotBlank(vo.getAdjustedRedBalls())
                 && StringUtils.isNotBlank(vo.getAdjustedBlueBall())
-                ? SsqPrizeCheckerUtils.checkPrize(integers, latestRecords.getSpecial(),
+                ? PrizeLevelEnum.checkPrize(integers, latestRecords.getSpecial(),
                 convertFunc.apply(vo.getAdjustedRedBalls()), convertFunc.apply(vo.getAdjustedBlueBall()))
                 : PrizeLevelEnum.NO_PRIZE;
             PrizeLevelEnum hitPrizeLevels = StringUtils.isNotBlank(vo.getRedBalls())
                 && StringUtils.isNotBlank(vo.getBlueBalls())
-                ? SsqPrizeCheckerUtils.checkPrize(integers, latestRecords.getSpecial(),
+                ? PrizeLevelEnum.checkPrize(integers, latestRecords.getSpecial(),
                 convertFunc.apply(vo.getRedBalls()), convertFunc.apply(vo.getBlueBalls()))
                 : PrizeLevelEnum.NO_PRIZE;
             Integer i = Stream.of(oriHitPrizeLevels, adjustHitPrizeLevels, hitPrizeLevels).filter(PrizeLevelEnum::isHit)
