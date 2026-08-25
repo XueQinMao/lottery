@@ -14,7 +14,7 @@ import {
 const NAV_ITEMS = [
   {
     href: "/",
-    label: "遗漏趋势",
+    label: "均线分析",
     match: (p: string) => p === "/",
     Icon: ChartLine,
   },

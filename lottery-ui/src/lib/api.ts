@@ -78,7 +78,28 @@ export async function fetchAnalyzeLatest(
   return json.data;
 }
 
-export async function fetchLlmRecommend(
+/** 特征推荐：POST /adjust，不传 drawRecords，仅按 count 生成。 */
+export async function fetchLlmFeatureRecommend(
+  count = 2,
+): Promise<LotteryAdjustResp> {
+  const res = await fetch(`${API_BASE}/api/llm/adjust`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ count }),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(`请求失败: HTTP ${res.status}`);
+  }
+  const json = (await res.json()) as ApiResult<LotteryAdjustResp>;
+  if (json.code !== 200 || !json.data) {
+    throw new Error(json.message || "LLM 推荐失败");
+  }
+  return json.data;
+}
+
+/** 缓存调优：GET /adjust/{count}/{isTopN}。true=评分最高，false=随机抽取。 */
+export async function fetchLlmCacheRecommend(
   count = 2,
   isTopN = false,
 ): Promise<LotteryAdjustResp> {

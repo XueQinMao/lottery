@@ -912,7 +912,21 @@ body {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
+}
+
+.recommend-control-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.recommend-control-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-muted-foreground);
+  white-space: nowrap;
 }
 
 .primary-btn {

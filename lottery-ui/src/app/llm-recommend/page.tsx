@@ -5,7 +5,8 @@ import { Sparkle } from "@phosphor-icons/react";
 import RecommendHistory from "@/components/RecommendHistory";
 import RecommendReport from "@/components/RecommendReport";
 import {
-  fetchLlmRecommend,
+  fetchLlmCacheRecommend,
+  fetchLlmFeatureRecommend,
   fetchLlmRecommendHistory,
   fetchLlmRecommendHistoryDetail,
 } from "@/lib/api";
@@ -16,9 +17,12 @@ import type {
 
 const COUNT_OPTIONS = [1, 2, 3, 5];
 
+type RecommendMode = "feature" | "cache";
+
 export default function LlmRecommendPage() {
+  const [mode, setMode] = useState<RecommendMode>("feature");
   const [count, setCount] = useState(2);
-  const [isTopN, setIsTopN] = useState(false);
+  const [isTopN, setIsTopN] = useState(true);
   const [data, setData] = useState<LotteryAdjustResp | null>(null);
   const [files, setFiles] = useState<AdjustHistoryFile[]>([]);
   const [activeFileName, setActiveFileName] = useState<string | null>(null);
@@ -54,12 +58,15 @@ export default function LlmRecommendPage() {
   }, [loadFiles]);
 
   const generate = useCallback(
-    async (size: number, topN: boolean) => {
+    async (nextMode: RecommendMode, size: number, topN: boolean) => {
       setLoading(true);
       setError(null);
       setFromHistory(false);
       try {
-        const result = await fetchLlmRecommend(size, topN);
+        const result =
+          nextMode === "feature"
+            ? await fetchLlmFeatureRecommend(size)
+            : await fetchLlmCacheRecommend(size, topN);
         setData(result);
         const nextFiles = await loadFiles(true);
         setActiveFileName(nextFiles[0]?.fileName ?? null);
@@ -107,45 +114,94 @@ export default function LlmRecommendPage() {
         <div className="filter-card recommend-toolbar-card">
           <div className="recommend-toolbar">
             <div className="recommend-controls">
-              <div className="type-tabs" role="group" aria-label="推荐组数">
-                {COUNT_OPTIONS.map((n) => (
+              <div className="recommend-control-group">
+                <span className="recommend-control-label" id="recommend-mode-label">
+                  生成方式
+                </span>
+                <div
+                  className="type-tabs"
+                  role="group"
+                  aria-labelledby="recommend-mode-label"
+                >
                   <button
-                    key={n}
                     type="button"
-                    className={`type-tab ${count === n ? "active" : ""}`}
-                    onClick={() => setCount(n)}
+                    className={`type-tab ${mode === "feature" ? "active" : ""}`}
+                    onClick={() => setMode("feature")}
                     disabled={busy}
-                    aria-pressed={count === n}
+                    aria-pressed={mode === "feature"}
                   >
-                    {n} 组
+                    特征推荐
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    className={`type-tab ${mode === "cache" ? "active" : ""}`}
+                    onClick={() => setMode("cache")}
+                    disabled={busy}
+                    aria-pressed={mode === "cache"}
+                  >
+                    缓存调优
+                  </button>
+                </div>
               </div>
-              <div className="type-tabs" role="group" aria-label="预选方式">
-                <button
-                  type="button"
-                  className={`type-tab ${!isTopN ? "active" : ""}`}
-                  onClick={() => setIsTopN(false)}
-                  disabled={busy}
-                  aria-pressed={!isTopN}
+              <div className="recommend-control-group">
+                <span className="recommend-control-label" id="recommend-count-label">
+                  组数
+                </span>
+                <div
+                  className="type-tabs"
+                  role="group"
+                  aria-labelledby="recommend-count-label"
                 >
-                  百分位抽样
-                </button>
-                <button
-                  type="button"
-                  className={`type-tab ${isTopN ? "active" : ""}`}
-                  onClick={() => setIsTopN(true)}
-                  disabled={busy}
-                  aria-pressed={isTopN}
-                >
-                  缓存 TopN
-                </button>
+                  {COUNT_OPTIONS.map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      className={`type-tab ${count === n ? "active" : ""}`}
+                      onClick={() => setCount(n)}
+                      disabled={busy}
+                      aria-pressed={count === n}
+                    >
+                      {n} 组
+                    </button>
+                  ))}
+                </div>
               </div>
+              {mode === "cache" ? (
+                <div className="recommend-control-group">
+                  <span className="recommend-control-label" id="recommend-pick-label">
+                    预选
+                  </span>
+                  <div
+                    className="type-tabs"
+                    role="group"
+                    aria-labelledby="recommend-pick-label"
+                  >
+                    <button
+                      type="button"
+                      className={`type-tab ${isTopN ? "active" : ""}`}
+                      onClick={() => setIsTopN(true)}
+                      disabled={busy}
+                      aria-pressed={isTopN}
+                    >
+                      评分最高
+                    </button>
+                    <button
+                      type="button"
+                      className={`type-tab ${!isTopN ? "active" : ""}`}
+                      onClick={() => setIsTopN(false)}
+                      disabled={busy}
+                      aria-pressed={!isTopN}
+                    >
+                      随机抽取
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
             <button
               type="button"
               className="primary-btn"
-              onClick={() => void generate(count, isTopN)}
+              onClick={() => void generate(mode, count, isTopN)}
               disabled={busy}
               aria-busy={loading}
             >
@@ -154,7 +210,12 @@ export default function LlmRecommendPage() {
             </button>
           </div>
           <p className="info-bar">
-            生成走缓存调优接口，结果写入后台 JSON。最近推荐先拉文件名，点击后再请求详情。
+            {mode === "feature"
+              ? "特征推荐：不传预选号码（drawRecords 为空），模型按特征报告直接生成所选组数。"
+              : isTopN
+                ? "缓存调优：从缓存取评分最高的所选组数，再交给模型调优。"
+                : "缓存调优：从缓存随机抽取所选组数，再交给模型调优。"}
+            结果写入后台 JSON，可从最近推荐回看。
           </p>
         </div>
 
@@ -170,7 +231,9 @@ export default function LlmRecommendPage() {
         <div className="recommend-main">
           {loading && (
             <div className="status" role="status" aria-atomic="true">
-              大模型正在基于预选号码调优，通常需要数十秒，请稍候...
+              {mode === "feature"
+                ? "大模型正在按特征报告生成号码组，通常需要数十秒，请稍候..."
+                : "大模型正在基于预选号码调优，通常需要数十秒，请稍候..."}
             </div>
           )}
           {detailLoading && (
@@ -194,7 +257,9 @@ export default function LlmRecommendPage() {
             </div>
           )}
           {!busy && !error && !data && (
-            <div className="status">选择组数后点击「生成推荐」，或从最近推荐回看。</div>
+            <div className="status">
+              选择生成方式和组数后点击「生成推荐」，或从最近推荐回看。
+            </div>
           )}
         </div>
       </div>

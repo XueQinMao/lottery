@@ -10,7 +10,7 @@ const PAGES: { match: (pathname: string) => boolean; title: string; sub: string 
   [
     {
       match: (p) => p === "/",
-      title: "遗漏趋势",
+      title: "均线分析",
       sub: "切换近 30/50/100 期；截止期号空=最新，如 2026092 表示含该期往前推",
     },
     {
@@ -36,7 +36,7 @@ const PAGES: { match: (pathname: string) => boolean; title: string; sub: string 
     {
       match: (p) => p.startsWith("/llm-recommend"),
       title: "LLM推荐",
-      sub: "生成后写入后台 JSON；最近推荐先拉文件名，点击再看详情",
+      sub: "特征推荐不传预选号码；缓存调优按评分最高或随机取号后再调优",
     },
   ];
 
