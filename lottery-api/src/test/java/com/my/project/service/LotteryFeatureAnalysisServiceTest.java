@@ -11,6 +11,7 @@ import com.my.project.persistence.entity.HistoryRecord;
 import com.my.project.persistence.repository.IHistoryRecordRepository;
 import com.my.project.python.bo.ModelPredictOutputBo;
 import com.my.project.service.config.LotteryModelConfig;
+import com.my.project.service.llm.IKillNumberService;
 import com.my.project.service.llm.impl.LotteryFeatureAnalysisServiceImpl;
 import com.my.project.service.support.FeatureForecastHitUtils;
 import com.my.project.service.support.FileUtils;
@@ -43,6 +44,9 @@ public class LotteryFeatureAnalysisServiceTest {
 
     @Resource
     private LotteryModelConfig lotteryModelConfig;
+
+    @Resource
+    private IKillNumberService killNumberService;
 
 
     /**
@@ -207,34 +211,117 @@ public class LotteryFeatureAnalysisServiceTest {
     public void test_kill(){
         List<HistoryRecord> window = historyRecordRepository.lambdaQuery()
             .orderByDesc(HistoryRecord::getOpenDate)
-            .last("limit 5")
+            .last("limit 31")
             .list();
-        for (int i = window.size()-1; i >= 0; i--) {
+        if (CollectionUtils.size(window) < 2) {
+            throw new IllegalStateException("历史开奖不足，无法做下一期对照");
+        }
+
+        for (int i = 0; i <window.size(); i++) {
             HistoryRecord end = window.get(i);
+
+            List<HistoryRecord> past100 = historyRecordRepository.lambdaQuery().le(HistoryRecord::getOpenDate, end.getOpenDate())
+                    .orderByDesc(HistoryRecord::getOpenDate).last("limit 30").list();
+            LotteryAnalysisReqBo.DrawRecord drawRecord = toDrawRecord(end);
+
+            var forecastRecords = past100.stream().map(this::toDrawRecord).collect(Collectors.toList());
+            var calculate10 = killNumberService.calculate(forecastRecords, drawRecord, 0);
+            var calculate12 = killNumberService.calculate(forecastRecords, drawRecord, 2);
+            var calculate14 = killNumberService.calculate(forecastRecords, drawRecord, 4);
+            var calculate16 = killNumberService.calculate(forecastRecords, drawRecord, 6);
+            var calculate18 = killNumberService.calculate(forecastRecords, drawRecord, 8);
+            var calculate20 = killNumberService.calculate(forecastRecords, drawRecord, 10);
+            var calculate22 = killNumberService.calculate(forecastRecords, drawRecord, 12);
+            var calculate24 = killNumberService.calculate(forecastRecords, drawRecord, 14);
+            var calculate26 = killNumberService.calculate(forecastRecords, drawRecord, 16);
+
+            FileUtil.writeString(JSON.toJSONString(calculate10),
+                new File(lotteryModelConfig.getPath() + "/kill/kill_" + end.getPeriod() + "_10.json"),
+                StandardCharsets.UTF_8);
+
+            FileUtil.writeString(JSON.toJSONString(calculate12),
+                new File(lotteryModelConfig.getPath() + "/kill/kill_" + end.getPeriod() + "_12.json"),
+                StandardCharsets.UTF_8);
+            FileUtil.writeString(JSON.toJSONString(calculate14),
+                new File(lotteryModelConfig.getPath() + "/kill/kill_" + end.getPeriod() + "_14.json"),
+                StandardCharsets.UTF_8);
+            FileUtil.writeString(JSON.toJSONString(calculate16),
+                new File(lotteryModelConfig.getPath() + "/kill/kill_" + end.getPeriod() + "_16.json"),
+                StandardCharsets.UTF_8);
+            FileUtil.writeString(JSON.toJSONString(calculate18),
+                new File(lotteryModelConfig.getPath() + "/kill/kill_" + end.getPeriod() + "_18.json"),
+                StandardCharsets.UTF_8);
+            FileUtil.writeString(JSON.toJSONString(calculate20),
+                new File(lotteryModelConfig.getPath() + "/kill/kill_" + end.getPeriod() + "_20.json"),
+                StandardCharsets.UTF_8);
+            FileUtil.writeString(JSON.toJSONString(calculate22),
+                new File(lotteryModelConfig.getPath() + "/kill/kill_" + end.getPeriod() + "_22.json"),
+                StandardCharsets.UTF_8);
+            FileUtil.writeString(JSON.toJSONString(calculate24),
+                new File(lotteryModelConfig.getPath() + "/kill/kill_" + end.getPeriod() + "_24.json"),
+                StandardCharsets.UTF_8);
+
+            FileUtil.writeString(JSON.toJSONString(calculate26),
+                new File(lotteryModelConfig.getPath() + "/kill/kill_" + end.getPeriod() + "_26.json"),
+                StandardCharsets.UTF_8);
+        }
+
+        List<HistoryRecord> targets = historyRecordRepository.lambdaQuery()
+            .orderByDesc(HistoryRecord::getOpenDate)
+            .last("limit 30")
+            .list();
+
+        for (int i =0; i< targets.size(); i++) {
+            HistoryRecord end = targets.get(i);
             List<Integer> nums =
                 List.of(end.getNum1(), end.getNum2(), end.getNum3(), end.getNum4(), end.getNum5(), end.getNum6());
+            kill(Integer.valueOf(end.getPeriod()), 10, nums, end.getSpecial());
             kill(Integer.valueOf(end.getPeriod()), 12, nums, end.getSpecial());
             kill(Integer.valueOf(end.getPeriod()), 14, nums, end.getSpecial());
             kill(Integer.valueOf(end.getPeriod()), 16, nums, end.getSpecial());
             kill(Integer.valueOf(end.getPeriod()), 18, nums, end.getSpecial());
             kill(Integer.valueOf(end.getPeriod()), 20, nums, end.getSpecial());
+            kill(Integer.valueOf(end.getPeriod()), 24, nums, end.getSpecial());
+            kill(Integer.valueOf(end.getPeriod()), 26, nums, end.getSpecial());
             System.out.println("***************************************************");
 
         }
     }
 
     private void kill(Integer period, Integer killNumber, List<Integer> winReadBalls, Integer winBlueBall){
-        FileUtils.readLine(lotteryModelConfig.getPath() + "/kill/kill_" + (period-1) + "_"+killNumber+".json", content -> {
+        String path = lotteryModelConfig.getPath() + "/kill/kill_" + (period-1) + "_"+killNumber+".json";
+        FileUtils.readLine(path, content -> {
             if(StringUtils.isBlank(content)){
                 return;
             }
             var killNumberResultBo = JSONObject.parseObject(content, KillNumberResultBo.class);
-            List<Integer> redKills = CollectionUtils.emptyIfNull(killNumberResultBo.getHardKillRed()).stream()
-                .map(KillNumberResultBo.KillItemBo::getBall).toList();
+            List<KillNumberResultBo.KillItemBo> redItems =
+                CollectionUtils.emptyIfNull(killNumberResultBo.getHardKillRed()).stream().toList();
+            List<Integer> redKills = redItems.stream().map(KillNumberResultBo.KillItemBo::getBall).toList();
             List<Integer> intersection = (List<Integer>) CollectionUtils.intersection(winReadBalls, redKills);
-            List<Integer> killBlues = CollectionUtils.emptyIfNull(killNumberResultBo.getHardKillBlue()).stream()
-                .map(KillNumberResultBo.KillItemBo::getBall).toList();
-            System.out.println("第"+period+"期红球杀"+killNumber+"，吴杀率："+intersection.size()%killNumber+"   蓝球误杀："+killBlues.contains(winBlueBall));
+            List<KillNumberResultBo.KillItemBo> blueItems =
+                CollectionUtils.emptyIfNull(killNumberResultBo.getHardKillBlue()).stream().toList();
+            List<Integer> killBlues = blueItems.stream().map(KillNumberResultBo.KillItemBo::getBall).toList();
+            long redScore = redItems.stream().filter(i -> "SCORE".equals(i.getSource())).count();
+            long redTrend = redItems.stream().filter(i -> "TREND".equals(i.getSource())).count();
+            long blueScore = blueItems.stream().filter(i -> "SCORE".equals(i.getSource())).count();
+            long blueTrend = blueItems.stream().filter(i -> "TREND".equals(i.getSource())).count();
+            long blueLast = blueItems.stream().filter(i -> "LAST".equals(i.getSource())).count();
+            int miss = intersection.size();
+//            System.out.println("第" + period + "期红球预期杀球:" + killNumber
+//                + "实际杀球：" + redKills.size()
+//                + "（加权" + redScore + "+趋势" + redTrend + "）"
+//                + "，误杀：" + miss + intersection
+//                + "   蓝球杀球：" + killBlues.size()
+//                + "（加权" + blueScore + "+趋势" + blueTrend + "+上期" + blueLast + "）"
+//                + "误杀：" + killBlues.contains(winBlueBall));
+//            redItems.forEach(i -> System.out.println("  红 " + String.format("%02d", i.getBall())
+//                + " [" + i.getSource() + "] " + i.getReason()));
+//            blueItems.forEach(i -> System.out.println("  蓝 " + String.format("%02d", i.getBall())
+//                + " [" + i.getSource() + "] " + i.getReason()));
+            System.out.println(
+                "**第"+period+"期 红球预期杀球：" + killNumber + " ,实际杀球：" + redKills.size() + " ,误杀率：" + intersection.size() % redKills.size()
+            +" ，蓝球杀球："+killBlues.size()+" 是否误杀："+killBlues.contains(winBlueBall));
         });
     }
 

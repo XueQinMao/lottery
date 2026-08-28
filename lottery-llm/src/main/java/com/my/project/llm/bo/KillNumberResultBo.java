@@ -63,7 +63,11 @@ public class KillNumberResultBo {
          */
         private Double score;
         /**
-         * 文字依据
+         * 来源：SCORE=加权硬杀，TREND=趋势杀，LAST=上期开出
+         */
+        private String source;
+        /**
+         * 文字依据（含各维度分、趋势相位、是否过阈值，便于回测对照）
          */
         private String reason;
     }

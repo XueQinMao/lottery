@@ -112,7 +112,7 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
         return respBo;
     }
 
-    private LotteryAnalysisRespBo doAnalyze(int sampleSize) {
+    public LotteryAnalysisRespBo doAnalyze(int sampleSize) {
         int fetchSize = Math.max(sampleSize, INTERVAL_FORECAST_MAX);
         log.info("拉取最近 {} 期历史开奖记录用于特征分析（杀号/冷热/趋势{}期，形态预测最多{}期，engine={}）", fetchSize,
             STATS_SAMPLE_SIZE, INTERVAL_FORECAST_MAX, analysisEngine);
@@ -139,10 +139,10 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
             LotteryAnalysisRespBo result = new LotteryAnalysisRespBo();
             result.setFeatureForecast(forecastFeaturesByIndex(forecastRecords));
             //记录一个用llm预测的后面对比那种方式好
-            FeatureForecastBo featureForecastBo = forecastFeaturesByLlm(forecastRecords);
-            FileUtil.writeString(JSON.toJSONString(featureForecastBo),
-                new File(lotteryModelConfig.getPath() + "/feature/feature_" + latestRecord.getPeriod() + ".json"),
-                StandardCharsets.UTF_8);
+//            FeatureForecastBo featureForecastBo = forecastFeaturesByLlm(forecastRecords);
+//            FileUtil.writeString(JSON.toJSONString(featureForecastBo),
+//                new File(lotteryModelConfig.getPath() + "/feature/feature_" + latestRecord.getPeriod() + ".json"),
+//                StandardCharsets.UTF_8);
             result.setKillNumbers(
                 Boolean.TRUE.equals(reqBo.getEnableKillNumber()) ? killNumberService.calculate(reqBo.getRecords(),
                     reqBo.getDefaultKillNumbers()) : null);
@@ -150,16 +150,15 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
             result.setPredictedThreeZoneRatio(threeZoneRatioPredictService.predict(reqBo.getRecords()));
             result.setTrendAnalysis(calcTrendAnalysis(statsRecords));
 
-            var calculate10 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 2);
-            var calculate12 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 4);
-            var calculate14 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 6);
-            var calculate16 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 8);
-            var calculate18 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 10);
-            var calculate20 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 12);
+            var calculate12 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 2);
+            var calculate14 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 4);
+            var calculate16 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 6);
+            var calculate18 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 8);
+            var calculate20 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 10);
+            var calculate22 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 12);
+            var calculate24 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 14);
+            var calculate26 = killNumberService.calculate(reqBo.getRecords(), reqBo.getDefaultKillNumbers(), 16);
 
-            FileUtil.writeString(JSON.toJSONString(calculate10),
-                new File(lotteryModelConfig.getPath() + "/kill/kill_" + latestRecord.getPeriod() + "_10.json"),
-                StandardCharsets.UTF_8);
             FileUtil.writeString(JSON.toJSONString(calculate12),
                 new File(lotteryModelConfig.getPath() + "/kill/kill_" + latestRecord.getPeriod() + "_12.json"),
                 StandardCharsets.UTF_8);
@@ -174,6 +173,16 @@ public class LotteryFeatureAnalysisServiceImpl implements ILotteryFeatureAnalysi
                 StandardCharsets.UTF_8);
             FileUtil.writeString(JSON.toJSONString(calculate20),
                 new File(lotteryModelConfig.getPath() + "/kill/kill_" + latestRecord.getPeriod() + "_20.json"),
+                StandardCharsets.UTF_8);
+            FileUtil.writeString(JSON.toJSONString(calculate22),
+                new File(lotteryModelConfig.getPath() + "/kill/kill_" + latestRecord.getPeriod() + "_22.json"),
+                StandardCharsets.UTF_8);
+            FileUtil.writeString(JSON.toJSONString(calculate24),
+                new File(lotteryModelConfig.getPath() + "/kill/kill_" + latestRecord.getPeriod() + "_24.json"),
+                StandardCharsets.UTF_8);
+
+            FileUtil.writeString(JSON.toJSONString(calculate26),
+                new File(lotteryModelConfig.getPath() + "/kill/kill_" + latestRecord.getPeriod() + "_26.json"),
                 StandardCharsets.UTF_8);
             return result;
         } finally {

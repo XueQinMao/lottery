@@ -62,46 +62,9 @@ public class KillNumberServiceImpl implements IKillNumberService {
 
     @Override
     public KillNumberResultBo calculate(List<DrawRecord> records, DrawRecord defaultKillNumbers) {
-        if (records == null || records.isEmpty()) {
-            log.warn("杀号计算样本为空，跳过");
-            return emptyResult();
-        }
-        List<DrawRecord> drawRecords = records.subList(0, Math.min(30, records.size()));
-        // 遗漏计算要求期号升序（最旧→最新），兼容上游降序传入
-        List<DrawRecord> chronological = toAscending(drawRecords);
+        return calculate(records, defaultKillNumbers, killNumberConfig.getTrend().getMaxTrendKillRed());
 
-        Map<Integer, Integer> redOmission = calcRedOmission(chronological);
-        Map<Integer, Integer> blueOmission = calcBlueOmission(chronological);
-        Map<Integer, Double> redScores = calculateRedScores(chronological, redOmission);
-        Map<Integer, Double> blueScores = calculateBlueScores(chronological, blueOmission);
 
-        int sampleSize = chronological.size();
-//        List<KillItemBo> hardKillRed = pickTop(redScores, redOmission, sampleSize,
-//            killNumberConfig.getMaxHardKillRed(), killNumberConfig.getHardThreshold(), Set.of(), true);
-//        List<KillItemBo> hardKillBlue = pickTop(blueScores, blueOmission, sampleSize,
-//            killNumberConfig.getMaxHardKillBlue(), killNumberConfig.getHardThreshold(), Set.of(), false);
-        List<KillItemBo> hardKillRed = new ArrayList<>();
-        List<KillItemBo> hardKillBlue = new ArrayList<>();
-        // 趋势均线直接杀号：不参与加权融合，达标直接进硬杀清单（须用升序样本）
-        Set<Integer> alreadyRed = ballsOf(hardKillRed);
-        Set<Integer> alreadyBlue = ballsOf(hardKillBlue);
-        List<KillItemBo> trendKillRed = calcTrendKills(chronological, true, alreadyRed, killNumberConfig.getTrend());
-        List<KillItemBo> trendKillBlue = calcTrendKills(chronological, false, alreadyBlue, killNumberConfig.getTrend());
-        hardKillRed.addAll(trendKillRed);
-        hardKillBlue.addAll(trendKillBlue);
-
-        //默认吧最近一期的都杀掉
-        hardKillBlue.add(
-            KillItemBo.builder().ball(defaultKillNumbers.getBlueBall()).score(1.0).reason("上期开出").build());
-//        defaultKillNumbers.getRedBalls().stream()
-//            .map(redball -> KillItemBo.builder().ball(redball).score(1.0).reason("上期开出").build())
-//            .forEach(hardKillRed::add);
-
-        KillNumberResultBo result = KillNumberResultBo.builder().hardKillRed(hardKillRed).hardKillBlue(hardKillBlue)
-            .basis(buildBasis(sampleSize)).build();
-
-        log.info("杀号计算完成: 硬杀红={}, 硬杀蓝={}", ballsOf(result.getHardKillRed()), ballsOf(result.getHardKillBlue()));
-        return result;
     }
 
     @Override
@@ -116,32 +79,34 @@ public class KillNumberServiceImpl implements IKillNumberService {
 
         Map<Integer, Integer> redOmission = calcRedOmission(chronological);
         Map<Integer, Integer> blueOmission = calcBlueOmission(chronological);
-        Map<Integer, Double> redScores = calculateRedScores(chronological, redOmission);
-        Map<Integer, Double> blueScores = calculateBlueScores(chronological, blueOmission);
+        Map<Integer, BallEval> redEvals = evaluateRed(chronological, redOmission);
+        Map<Integer, BallEval> blueEvals = evaluateBlue(chronological, blueOmission);
 
         int sampleSize = chronological.size();
-        List<KillItemBo> hardKillRed = pickTop(redScores, redOmission, sampleSize,
-            killNumberConfig.getMaxHardKillRed(), killNumberConfig.getHardThreshold(), Set.of(), true);
-        List<KillItemBo> hardKillBlue = pickTop(blueScores, blueOmission, sampleSize,
-            killNumberConfig.getMaxHardKillBlue(), killNumberConfig.getHardThreshold(), Set.of(), false);
+        List<KillItemBo> hardKillRed = pickTop(redEvals, redOmission, sampleSize,
+            killNumberConfig.getMaxHardKillRed(), killNumberConfig.getHardThreshold(), Set.of(), true, true);
+        List<KillItemBo> hardKillBlue = pickTop(blueEvals, blueOmission, sampleSize,
+            killNumberConfig.getMaxHardKillBlue(), killNumberConfig.getHardThreshold(), Set.of(), false, false);
 
-        // 趋势均线直接杀号：不参与加权融合，达标直接进硬杀清单（须用升序样本）
+        // 趋势均线直接杀号：不参与加权融合，按趋势分取 Top-N 进硬杀清单（须用升序样本）
+        // 数量口径不变：趋势上限 = 配置默认 + killNumber；不改写 Spring 单例
         Set<Integer> alreadyRed = ballsOf(hardKillRed);
         Set<Integer> alreadyBlue = ballsOf(hardKillBlue);
-        KillNumberConfig.TrendThreshold trend = killNumberConfig.getTrend();
-        trend.setMaxTrendKillBlue(trend.getMaxTrendKillBlue()+killNumber);
-        trend.setMaxTrendKillRed(trend.getMaxTrendKillRed()+killNumber);
-        List<KillItemBo> trendKillRed = calcTrendKills(chronological, true, alreadyRed, trend);
-        List<KillItemBo> trendKillBlue = calcTrendKills(chronological, false, alreadyBlue, trend);
+        int extra = killNumber == null ? 0 : killNumber;
+        int trendRedN = killNumberConfig.getTrend().getMaxTrendKillRed() + extra;
+        int trendBlueN = killNumberConfig.getTrend().getMaxTrendKillBlue() + extra;
+        List<KillItemBo> trendKillRed = calcTrendKills(chronological, true, alreadyRed, trendRedN);
+        List<KillItemBo> trendKillBlue = calcTrendKills(chronological, false, alreadyBlue, trendBlueN);
         hardKillRed.addAll(trendKillRed);
         hardKillBlue.addAll(trendKillBlue);
 
         //默认吧最近一期的都杀掉
         hardKillBlue.add(
-            KillItemBo.builder().ball(defaultKillNumbers.getBlueBall()).score(1.0).reason("上期开出").build());
-        defaultKillNumbers.getRedBalls().stream()
-            .map(redball -> KillItemBo.builder().ball(redball).score(1.0).reason("上期开出").build())
-            .forEach(hardKillRed::add);
+            KillItemBo.builder().ball(defaultKillNumbers.getBlueBall()).score(1.0)
+                .source("LAST").reason("上期开出").build());
+//        defaultKillNumbers.getRedBalls().stream()
+//            .map(redball -> KillItemBo.builder().ball(redball).score(1.0).reason("上期开出").build())
+//            .forEach(hardKillRed::add);
 
         KillNumberResultBo result = KillNumberResultBo.builder().hardKillRed(hardKillRed).hardKillBlue(hardKillBlue)
             .basis(buildBasis(sampleSize)).build();
@@ -153,23 +118,24 @@ public class KillNumberServiceImpl implements IKillNumberService {
 
     // ==================== 红球得分 ====================
 
-    private Map<Integer, Double> calculateRedScores(List<DrawRecord> records, Map<Integer, Integer> omission) {
+    private Map<Integer, BallEval> evaluateRed(List<DrawRecord> records, Map<Integer, Integer> omission) {
         Map<Integer, Integer> frequency = countRedFrequency(records);
         Map<Integer, Double> zoneScores = calcZoneScores(frequency);
         Map<Integer, Double> tailScores = calcTailScores(frequency);
 
         int sampleSize = records.size();
-        Map<Integer, Double> scores = new LinkedHashMap<>();
+        Map<Integer, BallEval> evals = new LinkedHashMap<>();
         for (int b = RED_MIN; b <= RED_MAX; b++) {
-            Map<String, Double> dims = new HashMap<>();
-            dims.put("frequency", frequencyScore(frequency.getOrDefault(b, 0)));//出现频率
-            dims.put("omission", omissionScore(omission.getOrDefault(b, sampleSize)));//遗漏频率
-            dims.put("zone", zoneScores.getOrDefault(b, 0.0));//出现区间
-            dims.put("tail", tailScores.getOrDefault(b, 0.0));//尾部
-            dims.put("rebound", reboundScore(omission.getOrDefault(b, sampleSize), sampleSize));//冷号回补保护
-            scores.put(b, weightedScore(dims));
+            Map<String, Double> dims = new LinkedHashMap<>();
+            dims.put("frequency", frequencyScore(frequency.getOrDefault(b, 0)));
+            dims.put("omission", omissionScore(omission.getOrDefault(b, sampleSize)));
+            dims.put("zone", zoneScores.getOrDefault(b, 0.0));
+            dims.put("tail", tailScores.getOrDefault(b, 0.0));
+            dims.put("rebound", reboundScore(omission.getOrDefault(b, sampleSize), sampleSize));
+            evals.put(b, new BallEval(weightedScore(dims), dims,
+                frequency.getOrDefault(b, 0), omission.getOrDefault(b, sampleSize)));
         }
-        return scores;
+        return evals;
     }
 
     private Map<Integer, Integer> countRedFrequency(List<DrawRecord> records) {
@@ -252,18 +218,19 @@ public class KillNumberServiceImpl implements IKillNumberService {
 
     // ==================== 蓝球得分 ====================
 
-    private Map<Integer, Double> calculateBlueScores(List<DrawRecord> records, Map<Integer, Integer> omission) {
+    private Map<Integer, BallEval> evaluateBlue(List<DrawRecord> records, Map<Integer, Integer> omission) {
         Map<Integer, Integer> frequency = countBlueFrequency(records);
 
         int sampleSize = records.size();
-        Map<Integer, Double> scores = new LinkedHashMap<>();
+        Map<Integer, BallEval> evals = new LinkedHashMap<>();
         for (int b = BLUE_MIN; b <= BLUE_MAX; b++) {
-            Map<String, Double> dims = new HashMap<>();
+            Map<String, Double> dims = new LinkedHashMap<>();
             dims.put("frequency", blueFrequencyScore(frequency.getOrDefault(b, 0)));
             dims.put("omission", blueOmissionScore(omission.getOrDefault(b, sampleSize)));
-            scores.put(b, blueWeightedScore(dims));
+            evals.put(b, new BallEval(blueWeightedScore(dims), dims,
+                frequency.getOrDefault(b, 0), omission.getOrDefault(b, sampleSize)));
         }
-        return scores;
+        return evals;
     }
 
     private Map<Integer, Integer> countBlueFrequency(List<DrawRecord> records) {
@@ -372,9 +339,10 @@ public class KillNumberServiceImpl implements IKillNumberService {
      * @param records  开奖记录（最旧 → 最新；与 {@link LotteryTrendUtils#analyze} 约定一致）
      * @param isRed    true=红球(1-33)，false=蓝球(1-16)
      * @param exclude  已在硬杀清单中的号码，跳过避免重复
+     * @param topN     趋势杀上限（配置默认 + killNumber），数量仍按此截断
      * @return 趋势杀号清单
      */
-    private List<KillItemBo> calcTrendKills(List<DrawRecord> records, boolean isRed, Set<Integer> exclude, KillNumberConfig.TrendThreshold trendCfg) {
+    private List<KillItemBo> calcTrendKills(List<DrawRecord> records, boolean isRed, Set<Integer> exclude, int topN) {
         List<Set<Integer>> drawSets = new ArrayList<>();
         for (DrawRecord r : records) {
             Set<Integer> set = new HashSet<>();
@@ -391,32 +359,22 @@ public class KillNumberServiceImpl implements IKillNumberService {
         }
         int min = isRed ? RED_MIN : BLUE_MIN;
         int max = isRed ? RED_MAX : BLUE_MAX;
-//        KillNumberConfig.TrendThreshold trendCfg = killNumberConfig.getTrend();
-        double killThreshold = trendCfg.getKillThreshold();
-        int topN = isRed ? trendCfg.getMaxTrendKillRed() : trendCfg.getMaxTrendKillBlue();
+        double killThreshold = killNumberConfig.getTrend().getKillThreshold();
 
-        // 候选：仅「真趋冷 falling」可进趋势杀；回暖/多头抬头不杀
         List<TrendKillCandidate> candidates = new ArrayList<>();
         for (int b = min; b <= max; b++) {
             if (exclude.contains(b)) {
                 continue;
             }
             TrendAnalysisResult result = LotteryTrendUtils.analyze(drawSets, b);
-            String phase = result.getPhase();
-            // rebounding / rising / cooling / neutral：禁止因空头堆叠误杀回暖号
-            if (!"falling".equals(phase)) {
-                continue;
-            }
             double score = trendScore(result);
-            if (score < killThreshold) {
-                continue;
-            }
             candidates.add(new TrendKillCandidate(b, score, calcBearishSpread(result),
                 currentIndex(result), result.getStats().getCurrentOmission(),
                 KillItemBo.builder()
                     .ball(b)
                     .score(round(score))
-                    .reason(buildTrendReason(result, score))
+                    .source("TREND")
+                    .reason(buildTrendReason(b, result, score, killThreshold))
                     .build()));
         }
 
@@ -470,28 +428,37 @@ public class KillNumberServiceImpl implements IKillNumberService {
     /**
      * 构建趋势杀号原因说明。
      */
-    private String buildTrendReason(TrendAnalysisResult result, double score) {
+    private String buildTrendReason(int ball, TrendAnalysisResult result, double score, double killThreshold) {
         List<Double> ma5 = result.getMa5();
         List<Double> ma10 = result.getMa10();
         List<Double> ma20 = result.getMa20();
         int last = ma5.size() - 1;
-        List<String> reasons = new ArrayList<>();
+        List<String> signals = new ArrayList<>();
 
         if (last >= 0 && ma5.get(last) != null && ma10.get(last) != null && ma20.get(last) != null) {
             double v5 = ma5.get(last), v10 = ma10.get(last), v20 = ma20.get(last);
             if (v5 < v10 && v10 < v20) {
-                reasons.add("指数均线空头排列");
+                signals.add("指数均线空头排列");
             }
         }
         if (last >= 1 && ma5.get(last - 1) != null && ma20.get(last - 1) != null) {
             if (ma5.get(last - 1) >= ma20.get(last - 1) && ma5.get(last) < ma20.get(last)) {
-                reasons.add("短期均线下穿长期均线");
+                signals.add("短期均线下穿长期均线");
             }
         }
-        if (reasons.isEmpty()) {
-            reasons.add("趋势走弱");
+        if (signals.isEmpty()) {
+            signals.add("趋势走弱");
         }
-        return String.join(" + ", reasons) + String.format(" 置信度%.3f", score);
+        String phase = result.getPhase() == null ? "-" : result.getPhase();
+        boolean falling = "falling".equals(phase);
+        boolean overLine = score >= killThreshold;
+        return String.format(
+            "号码%02d 趋势杀 相位=%s%s %s 分%.3f/阈值%.2f | %s",
+            ball, phase,
+            falling ? "" : "(非falling)",
+            overLine ? "过线" : "未过线",
+            score, killThreshold,
+            String.join(" + ", signals));
     }
 
     /**
@@ -623,24 +590,25 @@ public class KillNumberServiceImpl implements IKillNumberService {
      * @param sampleSize      样本大小
      * @param exclude         需排除的号码集合（预留扩展，当前硬杀为空集）
      * @param applyWhitelist  是否启用极值遗漏白名单保护（红球 true，蓝球 false）
+     * @param red             是否红球（决定 reason 展示的维度）
      */
-    private List<KillItemBo> pickTop(Map<Integer, Double> scores, Map<Integer, Integer> omission,
+    private List<KillItemBo> pickTop(Map<Integer, BallEval> evals, Map<Integer, Integer> omission,
                                      int sampleSize, int maxSize, double threshold,
-                                     Set<Integer> exclude, boolean applyWhitelist) {
+                                     Set<Integer> exclude, boolean applyWhitelist, boolean red) {
         int whitelistMiss = applyWhitelist
             ? (int) Math.ceil(sampleSize * killNumberConfig.getExtremeOmissionWhitelistRatio())
             : Integer.MAX_VALUE;
-        return scores.entrySet().stream()
-            .filter(e -> e.getValue() >= threshold)
+        return evals.entrySet().stream()
+            .filter(e -> e.getValue().fused() >= threshold)
             .filter(e -> !exclude.contains(e.getKey()))
-            // 极值遗漏白名单（仅红球）：遗漏期数 ≥ whitelistMiss 的号码不进硬杀清单
             .filter(e -> omission.getOrDefault(e.getKey(), sampleSize) < whitelistMiss)
-            .sorted(Map.Entry.<Integer, Double>comparingByValue().reversed())
+            .sorted(Comparator.comparingDouble((Map.Entry<Integer, BallEval> e) -> e.getValue().fused()).reversed())
             .limit(maxSize)
             .map(e -> KillItemBo.builder()
                 .ball(e.getKey())
-                .score(round(e.getValue()))
-                .reason(buildReason(e.getKey(), e.getValue()))
+                .score(round(e.getValue().fused()))
+                .source("SCORE")
+                .reason(buildScoreReason(e.getKey(), e.getValue(), red))
                 .build())
             .collect(Collectors.toList());
     }
@@ -666,17 +634,38 @@ public class KillNumberServiceImpl implements IKillNumberService {
     private String buildBasis(int sampleSize) {
         KillNumberConfig.TrendThreshold trend = killNumberConfig.getTrend();
         return String.format(
-            "基于最近 %d 期样本，按 frequency(冷热)/omission(遗漏)/zone(三区)/tail(尾数)/rebound(冷号回补保护) "
-                + "五维度加权融合，硬杀阈值 %.2f；红球极值遗漏(≥%.0f%%样本)号码白名单保护不进硬杀。"
-                + "趋势均线仅对相位=falling（空头且斜率未抬头）独立杀号；回暖/上升不进趋势硬杀；"
-                + "趋势杀上限红 Top%d / 蓝 Top%d（按趋势分→空头开口→当前指数→遗漏排序）。",
-            sampleSize, killNumberConfig.getHardThreshold(),
+            "基于最近 %d 期样本。数量=加权硬杀(红最多%d/蓝最多%d，得分≥%.2f) + 趋势TopN(红%d/蓝%d，按趋势分排序) + 上期蓝球。"
+                + "红球极值遗漏(≥%.0f%%样本)不进加权硬杀。reason 中展示冷热/遗漏/三区/尾数/回补分，以及趋势相位、是否falling、是否过阈值%.2f。",
+            sampleSize,
+            killNumberConfig.getMaxHardKillRed(), killNumberConfig.getMaxHardKillBlue(),
+            killNumberConfig.getHardThreshold(),
+            trend.getMaxTrendKillRed(), trend.getMaxTrendKillBlue(),
             killNumberConfig.getExtremeOmissionWhitelistRatio() * 100,
-            trend.getMaxTrendKillRed(), trend.getMaxTrendKillBlue());
+            trend.getKillThreshold());
     }
 
-    private String buildReason(int ball, double score) {
-        return String.format("号码 %02d 综合剔除置信度 %.3f", ball, score);
+    private String buildScoreReason(int ball, BallEval eval, boolean red) {
+        Map<String, Double> d = eval.dims();
+        if (red) {
+            return String.format(
+                "号码%02d 加权硬杀 综合%.3f | 冷热%.2f 遗漏%.2f 三区%.2f 尾数%.2f 回补%.2f | 出现%d次 遗漏%d期",
+                ball, eval.fused(),
+                d.getOrDefault("frequency", 0.0),
+                d.getOrDefault("omission", 0.0),
+                d.getOrDefault("zone", 0.0),
+                d.getOrDefault("tail", 0.0),
+                d.getOrDefault("rebound", 0.0),
+                eval.freq(), eval.miss());
+        }
+        return String.format(
+            "号码%02d 加权硬杀 综合%.3f | 冷热%.2f 遗漏%.2f | 出现%d次 遗漏%d期",
+            ball, eval.fused(),
+            d.getOrDefault("frequency", 0.0),
+            d.getOrDefault("omission", 0.0),
+            eval.freq(), eval.miss());
+    }
+
+    private record BallEval(double fused, Map<String, Double> dims, int freq, int miss) {
     }
 
     private double round(double v) {
