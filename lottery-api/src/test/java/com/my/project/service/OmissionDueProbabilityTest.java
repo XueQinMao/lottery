@@ -3,6 +3,7 @@ package com.my.project.service;
 import com.alibaba.fastjson.JSON;
 import com.my.project.persistence.entity.HistoryRecord;
 import com.my.project.persistence.repository.IHistoryRecordRepository;
+import com.my.project.service.enums.FeatureKindEnums;
 import com.my.project.service.support.OmissionDueProbabilityUtils;
 import com.my.project.service.support.OmissionDueProbabilityUtils.DueStat;
 import com.my.project.service.support.OmissionDueProbabilityUtils.Report;
@@ -13,9 +14,11 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -62,6 +65,19 @@ class OmissionDueProbabilityTest {
             System.out.println("蓝球杀球："+ StringUtils.join(kill0blues, ","));
             System.out.println("第"+w.getPeriod()+"期杀号，红球："+kill0Reds.size()+" 误杀："+intersection.size()+" 蓝球："+kill0blues.size()
                 +" 蓝球误杀："+kill0blues.contains(next.getSpecial()));
+
+            var objects = new ArrayList<>();
+            for (FeatureKindEnums value : FeatureKindEnums.values()) {
+                String apply = value.getFunction().apply(nextWins, next.getSpecial());
+                Map<String, Double> stringDoubleMap = stringMapMap.get(value.getLabel());
+                Map<String, Double> collect = stringDoubleMap.entrySet().stream().filter(entry -> entry.getValue() > 0)
+                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+                System.out.println("第"+w.getPeriod()+"预测"+value.getLabel()+"特征结果："+collect+" 实际结果："+apply+ "  是否命中："
+                    +collect.containsKey(apply));
+                if(!collect.containsKey(apply)){
+                    objects.add(value.getLabel());
+                }
+            } System.out.println("特征未命中的："+StringUtils.join(objects,","));
             System.out.println("***********************************");
         });
 

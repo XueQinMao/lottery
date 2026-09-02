@@ -63,7 +63,7 @@ public class HistoryRecordController {
         @RequestParam(required = false) String endPeriod) {
         try {
             TrendAnalysisVo trendAnalysisVo = historyRecordService.analyzeTrend(ballType, ball, sampleSize, endPeriod);
-            System.out.println(JSON.toJSONString(trendAnalysisVo));
+            System.out.println("trend"+JSON.toJSONString(trendAnalysisVo));
             return Result.success(trendAnalysisVo);
         } catch (Exception e) {
             return Result.error(e.getMessage());
@@ -82,7 +82,7 @@ public class HistoryRecordController {
         @RequestParam(required = false) String endPeriod) {
         try {
             FeatureStatsVo featureStatsVo = historyRecordService.analyzeFeatureStats(sampleSize, endPeriod);
-            System.out.println(JSON.toJSONString(featureStatsVo));
+            System.out.println("feature-stats"+JSON.toJSONString(featureStatsVo));
             return Result.success(featureStatsVo);
         } catch (Exception e) {
             return Result.error(e.getMessage());
@@ -109,7 +109,7 @@ public class HistoryRecordController {
         try {
             PatternTrendVo patternTrendVo =
                 historyRecordService.analyzePatternTrend(feature, ratio, sampleSize, endPeriod);
-            System.out.println(JSON.toJSONString(patternTrendVo));
+            System.out.println("pattern-trend"+JSON.toJSONString(patternTrendVo));
             return Result.success(patternTrendVo);
         } catch (Exception e) {
             return Result.error(e.getMessage());

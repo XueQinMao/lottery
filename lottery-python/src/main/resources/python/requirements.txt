@@ -1,28 +1,16 @@
-# 双色球完整多层融合模型依赖 - 真实版本
+# 双色球多层融合模型 —— 源码实际依赖
+# 推荐 Python 3.9 ~ 3.12（Java 端调用命令为 `python`，须在 PATH 中）
+# 一键安装：双击项目根目录 install_python_deps.bat
+#          或本目录 python install_deps.py
 
-# 基础数据处理
+# ---- 必需（train_models / predict / backtest / ssq_features）----
 numpy>=1.21.0
 pandas>=1.3.0
 scikit-learn>=1.0.0
-
-# 传统机器学习
 xgboost>=1.5.0
 
-# 深度学习 - LSTM (TensorFlow/Keras)
+# 深度学习（缺失时训练脚本会自动跳过对应模型，不阻断流程）
+# LSTM: from tensorflow import keras
+# Transformer: torch / torch.nn / torch.optim / DataLoader
 tensorflow>=2.8.0
-keras>=2.8.0
-
-# 深度学习 - Transformer (PyTorch)
 torch>=1.10.0
-torchvision>=0.11.0
-
-# 其他可选模型
-catboost>=1.0.0
-
-# 数据可视化（可选）
-matplotlib>=3.4.0
-seaborn>=0.11.0
-
-# 工具库
-joblib>=1.1.0
-tqdm>=4.62.0
