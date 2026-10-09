@@ -11,6 +11,8 @@ export interface FeatureLineChartProps {
   periods: string[];
   values: Array<number | null>;
   avg: number;
+  avgLabel?: string;
+  avgDisplay?: string;
   lineColor?: string;
   labels?: string[];
   yMin?: number;
@@ -25,6 +27,8 @@ export default function FeatureLineChart({
   periods,
   values,
   avg,
+  avgLabel = "平均",
+  avgDisplay,
   lineColor = "#3B82F6",
   labels,
   yMin,
@@ -41,7 +45,7 @@ export default function FeatureLineChart({
       chartRef.current = echarts.init(boxRef.current);
     }
 
-    const avgText = Number.isInteger(avg) ? String(avg) : avg.toFixed(2);
+    const avgText = avgDisplay ?? (Number.isInteger(avg) ? String(avg) : avg.toFixed(2));
 
     chartRef.current.setOption(
       {
@@ -61,7 +65,7 @@ export default function FeatureLineChart({
             const idx = params[0].dataIndex;
             const ratio = labels?.[idx];
             const raw = params[0].value;
-            const display = raw == null ? "—" : String(raw);
+            const display = raw == null ? "—" : yFormatter ? yFormatter(raw) : String(raw);
             return (
               `期号: ${params[0].axisValue}<br/>` +
               `${yName}: ${display}` +
@@ -113,7 +117,7 @@ export default function FeatureLineChart({
                   yAxis: avg,
                   lineStyle: { color: "#d29922", type: "dashed", width: 1.5 },
                   label: {
-                    formatter: `平均 ${avgText}`,
+                    formatter: `${avgLabel} ${avgText}`,
                     color: "#d29922",
                     position: "insideEndTop",
                     fontSize: 11,
@@ -132,6 +136,8 @@ export default function FeatureLineChart({
     return () => window.removeEventListener("resize", onResize);
   }, [
     avg,
+    avgLabel,
+    avgDisplay,
     labels,
     lineColor,
     periods,
@@ -154,7 +160,7 @@ export default function FeatureLineChart({
     <div className="chart-container">
       <div className="chart-title">
         <span>{title}</span>
-        <span className="tag">平均 {Number.isInteger(avg) ? avg : avg.toFixed(2)}</span>
+        <span className="tag">{avgLabel} {avgDisplay ?? (Number.isInteger(avg) ? avg : avg.toFixed(2))}</span>
       </div>
       <div ref={boxRef} className="chart-box" />
     </div>

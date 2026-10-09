@@ -83,9 +83,37 @@ export interface FeatureForecast {
 
 /** 调优/推荐用特征报告：仅含选号约束模块，不含历史直方图 */
 export interface LotteryAnalysisResp {
+  featureAnalysis?: PatternFeatureAnalysis[];
+  recentDrawRecords?: DrawRecord[];
   killNumbers?: KillNumberResult;
   coldHotAnalysis?: ColdHotAnalysis;
   predictedThreeZoneRatio?: ThreeZoneRatioPredict;
   trendAnalysis?: TrendAnalysis;
   featureForecast?: FeatureForecast;
+}
+
+export interface DrawRecord {
+  period: string;
+  redBalls: number[];
+  blueBall: number;
+}
+
+export interface PatternFeatureAnalysis {
+  code: string;
+  label: string;
+  status: "OK" | "UNAVAILABLE";
+  source: "llm-pattern" | "java" | "legacy";
+  sampleSize?: number;
+  patternSummary?: string;
+  nextPeriodInference?: string;
+  failureReason?: string;
+  likelyValues?: string[];
+  unlikelyValues?: string[];
+  likelyReason?: string;
+  unlikelyReason?: string;
+  observations?: (DrawRecord & {
+    position: number;
+    value: string;
+    priorColdHot?: ColdHotAnalysis;
+  })[];
 }

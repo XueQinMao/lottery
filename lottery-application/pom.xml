@@ -28,12 +28,6 @@
             <version>0.0.1-SNAPSHOT</version>
         </dependency>
 
-        <!-- ARIMA 时间序列预测库 -->
-        <dependency>
-            <groupId>com.github.signaflo</groupId>
-            <artifactId>timeseries</artifactId>
-        </dependency>
-
         <!-- Caffeine 本地缓存 -->
         <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>

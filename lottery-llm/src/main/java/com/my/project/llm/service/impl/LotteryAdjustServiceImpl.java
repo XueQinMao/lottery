@@ -4,7 +4,8 @@ import com.alibaba.fastjson.JSON;
 import com.my.project.llm.bo.LotteryAdjustReqBo;
 import com.my.project.llm.bo.LotteryAdjustRespBo;
 import com.my.project.llm.prompt.LotteryAdjustPrompt;
-import com.my.project.llm.service.ILotteryAdjustService;
+import com.my.project.llm.service.LotteryAdjustService;
+import com.my.project.llm.support.LotteryTicketValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.springframework.ai.chat.client.ChatClient;
@@ -29,7 +30,7 @@ import java.util.stream.Collectors;
  **/
 @Slf4j
 @Service
-public class LotteryAdjustServiceImpl implements ILotteryAdjustService {
+public class LotteryAdjustServiceImpl implements LotteryAdjustService {
 
     private static final int DEFAULT_RECOMMEND_COUNT = 2;
     private static final int MAX_RECOMMEND_COUNT = 10;
@@ -42,59 +43,70 @@ public class LotteryAdjustServiceImpl implements ILotteryAdjustService {
     }
 
     @Override
-    public LotteryAdjustRespBo adjust(LotteryAdjustReqBo reqBo) {
-        if (reqBo == null) {
+    public LotteryAdjustRespBo adjust(LotteryAdjustReqBo request) {
+        if (request == null) {
             throw new IllegalArgumentException("调优入参不能为空");
         }
-        if (reqBo.getAnalysisReportJson() == null || reqBo.getAnalysisReportJson().isBlank()) {
+        if (request.getAnalysisReportJson() == null || request.getAnalysisReportJson().isBlank()) {
             throw new IllegalArgumentException("特征分析报告不能为空");
         }
-        return CollectionUtils.isEmpty(reqBo.getTickets()) ? recommend(reqBo) : adjustExisting(reqBo);
+        RuntimeException failure = null;
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                return CollectionUtils.isEmpty(request.getTickets()) ? recommend(request) : adjustExisting(request);
+            } catch (RuntimeException e) {
+                failure = e;
+                log.warn("号码生成/校验第{}次失败: {}", attempt + 1, e.getMessage());
+            }
+        }
+        throw new IllegalStateException("大模型未返回合法号码，请重试", failure);
     }
 
     /**
      * 调优模式：对已有号码组逐一调整。
      */
-    private LotteryAdjustRespBo adjustExisting(LotteryAdjustReqBo reqBo) {
+    private LotteryAdjustRespBo adjustExisting(LotteryAdjustReqBo request) {
         log.info("开始调用 DeepSeek 调优（单组单式+最终推荐包），候选组数: {}，用户附加要求: {}",
-            reqBo.getTickets().size(), formatUserRequirement(reqBo.getUserRequirement()));
+            request.getTickets().size(), formatUserRequirement(request.getUserRequirement()));
 
-        String ticketsJson = JSON.toJSONString(reqBo.getTickets());
+        String ticketsJson = JSON.toJSONString(request.getTickets());
         LotteryAdjustRespBo result = lotteryAdjustChatClient.prompt()
             .user(u -> u.text(LotteryAdjustPrompt.USER_PROMPT)
-                .param("report", reqBo.getAnalysisReportJson())
+                .param("report", reportForModel(request.getAnalysisReportJson()))
                 .param("tickets", ticketsJson)
-                .param("lastRedBalls", formatBalls(reqBo.getLastDrawRedBalls()))
-                .param("lastBlueBall", reqBo.getLastDrawBlueBall() == null ? "" : String.valueOf(reqBo.getLastDrawBlueBall()))
-                .param("userRequirement", formatUserRequirement(reqBo.getUserRequirement()))
+                .param("lastRedBalls", formatBalls(request.getLastDrawRedBalls()))
+                .param("lastBlueBall", request.getLastDrawBlueBall() == null ? "" : String.valueOf(request.getLastDrawBlueBall()))
+                .param("userRequirement", formatUserRequirement(request.getUserRequirement()))
                 .param("format", FORMAT_HINT))
             .call()
             .entity(LotteryAdjustRespBo.class);
 
-        validateResult(result, reqBo.getTickets().size());
+        validateResult(result, request.getTickets().size());
+        LotteryTicketValidator.validate(result, request, request.getTickets().size());
         return result;
     }
 
     /**
      * 推荐模式：tickets 为空时，按特征报告从零生成 N 组号码。
      */
-    private LotteryAdjustRespBo recommend(LotteryAdjustReqBo reqBo) {
-        int count = resolveRecommendCount(reqBo.getCount());
+    private LotteryAdjustRespBo recommend(LotteryAdjustReqBo request) {
+        int count = resolveRecommendCount(request.getCount());
         log.info("开始调用 DeepSeek 推荐（无候选号码，按特征报告生成），组数: {}，用户附加要求: {}",
-            count, formatUserRequirement(reqBo.getUserRequirement()));
+            count, formatUserRequirement(request.getUserRequirement()));
 
         LotteryAdjustRespBo result = lotteryAdjustChatClient.prompt()
             .user(u -> u.text(LotteryAdjustPrompt.RECOMMEND_PROMPT)
-                .param("report", reqBo.getAnalysisReportJson())
+                .param("report", reportForModel(request.getAnalysisReportJson()))
                 .param("count", String.valueOf(count))
-                .param("lastRedBalls", formatBalls(reqBo.getLastDrawRedBalls()))
-                .param("lastBlueBall", reqBo.getLastDrawBlueBall() == null ? "" : String.valueOf(reqBo.getLastDrawBlueBall()))
-                .param("userRequirement", formatUserRequirement(reqBo.getUserRequirement()))
+                .param("lastRedBalls", formatBalls(request.getLastDrawRedBalls()))
+                .param("lastBlueBall", request.getLastDrawBlueBall() == null ? "" : String.valueOf(request.getLastDrawBlueBall()))
+                .param("userRequirement", formatUserRequirement(request.getUserRequirement()))
                 .param("format", FORMAT_HINT))
             .call()
             .entity(LotteryAdjustRespBo.class);
 
         validateResult(result, count);
+        LotteryTicketValidator.validate(result, request, count);
         return result;
     }
 
@@ -106,6 +118,19 @@ public class LotteryAdjustServiceImpl implements ILotteryAdjustService {
             return "";
         }
         return balls.stream().sorted().map(String::valueOf).collect(Collectors.joining(", "));
+    }
+
+    /** 兼容直接传入的旧报告字符串，模型输入也不携带内部逐期明细。 */
+    private static String reportForModel(String reportJson) {
+        var report = JSON.parseObject(reportJson);
+        var features = report.getJSONArray("featureAnalysis");
+        if (features != null) {
+            for (int index = 0; index < features.size(); index++) {
+                var feature = features.getJSONObject(index);
+                if (feature != null) feature.remove("observations");
+            }
+        }
+        return JSON.toJSONString(report);
     }
 
     /**

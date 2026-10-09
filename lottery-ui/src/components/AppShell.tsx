@@ -29,6 +29,11 @@ const PAGES: { match: (pathname: string) => boolean; title: string; sub: string 
       sub: "红球 0尾–9尾个数（号码 % 10）；近 30/50/100 期与截止期号同和值/差值",
     },
     {
+      match: (p) => p === "/feature-stats/occurrence",
+      title: "红球形态历史出现",
+      sub: "各比例、区间分别绘图；1=出现，0=未出现，虚线为样本出现率",
+    },
+    {
       match: (p) => p === "/feature-stats/cold-hot",
       title: "冷温热趋势",
       sub: "每期取前 30 期用 ColdHotAnalysisUtils 分类，统计本期开出号码落入冷/温/热的个数",
@@ -41,7 +46,7 @@ const PAGES: { match: (pathname: string) => boolean; title: string; sub: string 
     {
       match: (p) => p.startsWith("/llm-analysis"),
       title: "LLM 分析",
-      sub: "基于最近样本的杀号、冷热与形态推算",
+      sub: "最近10期逐项分析形态现象并推演下期，结合杀号、冷热与最近100期开奖",
     },
     {
       match: (p) => p.startsWith("/llm-recommend"),

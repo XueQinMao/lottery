@@ -30,6 +30,13 @@ export default function FeatureStatsToolbar() {
         尾数
       </Link>
       <Link
+        href="/feature-stats/occurrence"
+        scroll={false}
+        className={`type-tab ${pathname === "/feature-stats/occurrence" ? "active" : ""}`}
+      >
+        历史出现
+      </Link>
+      <Link
         href="/feature-stats/cold-hot"
         scroll={false}
         className={`type-tab ${pathname === "/feature-stats/cold-hot" ? "active" : ""}`}

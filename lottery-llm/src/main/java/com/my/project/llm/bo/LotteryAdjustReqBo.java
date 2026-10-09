@@ -18,7 +18,7 @@ import java.util.List;
  * </ol>
  *
  * <p>当 {@link #tickets} 非空时走「调优」；为空时走「推荐」：
- * 仅依据特征报告生成 {@link #recommendCount} 组号码，输出 Schema 与调优一致。
+ * 仅依据特征报告生成 {@link #count} 组号码，输出 Schema 与调优一致。
  *
  * @author 刘强
  * @version 2026/07/22 11:40
@@ -31,13 +31,13 @@ public class LotteryAdjustReqBo {
 
     /**
      * 特征分析报告 JSON 字符串。
-     * <p>由 Java 直方图 + LLM 形态推算产出，直接透传给大模型作为调优 / 推荐依据。
+     * <p>红蓝球形态现象与下一期候选池、杀号、当前冷热池、最近30期开奖。
      */
     private String analysisReportJson;
 
     /**
      * 待调整的预测号码组。
-     * <p>非空 → 调优模式；空或 null → 推荐模式（按 {@link #recommendCount} 生成）。
+     * <p>非空 → 调优模式；空或 null → 推荐模式（按 {@link #count} 生成）。
      */
     private List<PredictTicket> tickets;
 

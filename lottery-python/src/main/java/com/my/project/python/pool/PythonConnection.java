@@ -28,23 +28,23 @@ public class PythonConnection {
     private static final Logger logger = LoggerFactory.getLogger(PythonConnection.class);
 
     private final Process process;
-    private final BufferedWriter writer;
-    private final BufferedReader reader;
+    private final BufferedWriter requestWriter;
+    private final BufferedReader responseReader;
 
     public PythonConnection(String scriptName, String modelDir) throws IOException {
         Instant start = Instant.now();
         Triple<Process, BufferedWriter, BufferedReader> pythonObject = PythonUtils.startPythonProcess(buildCommand(scriptName, modelDir));
         process = pythonObject.getLeft();
-        writer = pythonObject.getMiddle();
-        reader = pythonObject.getRight();
+        requestWriter = pythonObject.getMiddle();
+        responseReader = pythonObject.getRight();
 
         Supplier<Void> checkProcess = () -> {
             try {
                 // 1. 验证Python进程是否正常
-                writer.write(JSONObject.toJSONString(Map.of("type", "init_check")));
-                writer.newLine();
-                writer.flush();
-                String checkResp = reader.readLine();
+                requestWriter.write(JSONObject.toJSONString(Map.of("type", "init_check")));
+                requestWriter.newLine();
+                requestWriter.flush();
+                String checkResp = responseReader.readLine();
                 JSONObject check = JSONObject.parseObject(checkResp);
                 Assert.isTrue("initialized".equals(check.getString("status")), "Python进程初始化检查异常失败" + checkResp);
             } catch (Exception e) {
@@ -56,12 +56,12 @@ public class PythonConnection {
         logger.info("✓ Python初始化耗时{}s", ChronoUnit.SECONDS.between(start, Instant.now()));
     }
 
-    public synchronized String execute(Map<String, Object> params) throws IOException {
-        String requestJson = JSONObject.toJSONString(params);
-        writer.write(requestJson + "\n");
-        writer.flush();
+    public synchronized String execute(Map<String, Object> request) throws IOException {
+        String requestJson = JSONObject.toJSONString(request);
+        requestWriter.write(requestJson + "\n");
+        requestWriter.flush();
 
-        String responseLine = reader.readLine();
+        String responseLine = responseReader.readLine();
         if (responseLine == null) {
             throw new IOException("Python服务连接已断开");
         }
@@ -70,8 +70,8 @@ public class PythonConnection {
 
     public void close() {
         try {
-            writer.close();
-            reader.close();
+            requestWriter.close();
+            responseReader.close();
         } catch (IOException ignored) {}
 
         if (process != null && process.isAlive()) {
@@ -97,7 +97,7 @@ public class PythonConnection {
 
     private void initializePythonProcess(Supplier<Void> checkProcess) throws IOException {
         // 等待初始化完成信号
-        String initSignal = reader.readLine(); // 30秒超时
+        String initSignal = responseReader.readLine(); // 30秒超时
         Assert.hasText(initSignal, "python 初始化失败，疑似超时");
 
         JSONObject signal = JSONObject.parseObject(initSignal);

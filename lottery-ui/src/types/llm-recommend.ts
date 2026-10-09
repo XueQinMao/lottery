@@ -1,4 +1,4 @@
-import type { FeatureForecast } from "@/types/llm-analysis";
+import type { FeatureForecast, PatternFeatureAnalysis } from "@/types/llm-analysis";
 
 export type FeatureHitType = "MAIN" | "ALT" | "MISS";
 
@@ -66,6 +66,7 @@ export interface LotteryAdjustResp {
   conclusion?: string;
   fileName?: string;
   featureForecast?: FeatureForecast;
+  featureAnalysis?: PatternFeatureAnalysis[];
   /** 与 adjustedTickets 按下标对齐 */
   adjustedTicketHits?: FeatureHitSummary[];
   /** 与 finalRecommendation.singleTickets 按下标对齐 */

@@ -33,10 +33,19 @@ lottery:
   llm:
     analysis:
       # java：snapshot 的 indexValues 前后期差值趋势本地计算
-      # llm：压缩候选表后由大模型选值，再 applyGuard 硬校验
-      engine: java
-      model: deepseek-chat
+      # llm-pattern：最近10期开奖逐项分析；冷温热需要每期前30期，至少40期开奖
+      engine: llm-pattern
+      # 百炼中国内地（北京），密钥需要与接入地域匹配。
+      api-key: ${DASHSCOPE_API_KEY:}
+      # 不包含 /v1，客户端补齐 /v1/chat/completions。
+      base-url: ${DASHSCOPE_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}
+      model: ${LOTTERY_ANALYSIS_MODEL:qwen-flash}
       temperature: 0.2
+      max-tokens: 2048
+      # 特征分析独立限制网络等待；最多2次应用层尝试，不叠加SDK重试。
+      connect-timeout: 10s
+      read-timeout: 120s
+      retry-delay: 2s
   model:
     path: D:\home\python\
     csv:

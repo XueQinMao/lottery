@@ -1,5 +1,7 @@
 "use client";
 
+import PatternAnalysisReport from "@/components/PatternAnalysisReport";
+
 import { useEffect, useState } from "react";
 import { Check, Copy } from "@phosphor-icons/react";
 import type { FeatureForecast } from "@/types/llm-analysis";
@@ -335,6 +337,7 @@ function FinalPackage({
 export default function RecommendReport({ data }: { data: LotteryAdjustResp }) {
   return (
     <div className="report-bento">
+      <PatternAnalysisReport features={data.featureAnalysis} />
       {data.conclusion ? (
         <section className="section report-card report-span-full">
           <h2>综合说明</h2>

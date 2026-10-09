@@ -67,7 +67,7 @@ export async function fetchFeatureStats(
 }
 
 export async function fetchAnalyzeLatest(
-  sampleSize = 100,
+  sampleSize = 30,
 ): Promise<LotteryAnalysisResp> {
   const params = new URLSearchParams({
     sampleSize: String(sampleSize),

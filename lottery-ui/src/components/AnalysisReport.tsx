@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Question } from "@phosphor-icons/react";
+import PatternAnalysisReport from "@/components/PatternAnalysisReport";
 import type {
   ColdHotAnalysis,
   FeatureForecast,
@@ -420,13 +421,14 @@ function TrendSection({ data }: { data?: TrendAnalysis }) {
 export default function AnalysisReport({ data }: { data: LotteryAnalysisResp }) {
   return (
     <div className="report-bento">
-      <div className="report-span-full">
+      <PatternAnalysisReport features={data.featureAnalysis} records={data.recentDrawRecords} />
+      {!data.featureAnalysis?.length && <div className="report-span-full">
         <FeatureForecastSection data={data.featureForecast} />
-      </div>
+      </div>}
       <KillSection data={data.killNumbers} />
       <ColdHotSection data={data.coldHotAnalysis} />
-      <ThreeZoneSection data={data.predictedThreeZoneRatio} />
-      <TrendSection data={data.trendAnalysis} />
+      {!data.featureAnalysis?.length && <ThreeZoneSection data={data.predictedThreeZoneRatio} />}
+      {!data.featureAnalysis?.length && <TrendSection data={data.trendAnalysis} />}
     </div>
   );
 }

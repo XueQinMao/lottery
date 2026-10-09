@@ -15,10 +15,10 @@ import type { LotteryAnalysisResp } from "@/types/llm-analysis";
 import type { PredictFileRecord } from "@/types/predict-file-record";
 import { PREDICT_FILE_TYPE } from "@/types/predict-file-record";
 
-const SAMPLE_OPTIONS = [100];
+const SAMPLE_OPTIONS = [30];
 
 export default function LlmAnalysisPage() {
-  const [sampleSize, setSampleSize] = useState(100);
+  const [sampleSize, setSampleSize] = useState(30);
   const [data, setData] = useState<LotteryAnalysisResp | null>(null);
   const [files, setFiles] = useState<PredictFileRecord[]>([]);
   const [fileLimit, setFileLimit] = useState(HISTORY_PAGE_SIZE);

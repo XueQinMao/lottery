@@ -18,16 +18,25 @@
     </properties>
 
     <dependencies>
+        <!-- 百炼使用兼容协议；只引入模型库，避免新增自动配置影响推荐客户端。 -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-openai</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-collections4</artifactId>
+            <version>4.4</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+        </dependency>
         <!-- Spring AI DeepSeek：直连 api.deepseek.com（非阿里云百炼） -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-model-deepseek</artifactId>
-        </dependency>
-
-        <!-- Agent 框架（保留，便于后续扩展为 Agent 工作流） -->
-        <dependency>
-            <groupId>com.alibaba.cloud.ai</groupId>
-            <artifactId>spring-ai-alibaba-agent-framework</artifactId>
         </dependency>
 
         <!-- 复用基础设施层实体（HistoryRecord 等） -->

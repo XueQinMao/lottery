@@ -23,6 +23,7 @@ public class LotteryAdjustViewBo {
     private String fileName;
     /** 本次推荐所依据的形态推算 */
     private FeatureForecastBo featureForecast;
+    private List<PatternFeatureAnalysisBo> featureAnalysis;
     /** 与 {@link #adjustedTickets} 按下标对齐 */
     private List<FeatureHitSummary> adjustedTicketHits;
     /** 与 {@link LotteryAdjustRespBo.FinalRecommendation#getSingleTickets()} 按下标对齐 */

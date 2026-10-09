@@ -12,7 +12,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * @version 2025/07/17 11:27
  **/
 @SpringBootApplication
-@MapperScan("com.my.project.persistence.mapper")
+@MapperScan("com.my.project.infrastructure.persistence.mapper")
 @EnableScheduling
 public class LotteryApplication {
     public static void main(String[] args) {

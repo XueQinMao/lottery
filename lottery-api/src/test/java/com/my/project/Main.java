@@ -1,10 +1,10 @@
 package com.my.project;
 
 import com.alibaba.fastjson.JSON;
-import com.my.project.persistence.entity.PredictRecord;
+import com.my.project.infrastructure.persistence.entity.PredictRecord;
 import com.my.project.python.bo.ModelPredictOutputBo;
-import com.my.project.service.support.FileUtils;
-import com.my.project.service.support.SsqCombinationUtils;
+import com.my.project.application.support.FileUtils;
+import com.my.project.application.support.SsqCombinationUtils;
 import org.apache.commons.lang3.tuple.Pair;
 
 import java.time.LocalDate;

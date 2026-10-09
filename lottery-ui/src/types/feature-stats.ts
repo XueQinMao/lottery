@@ -19,4 +19,16 @@ export interface FeatureStatsVo {
   /** 外层下标 0–9 对应 0尾–9尾，内层按期个数 */
   tailCounts: number[][];
   tailAvgs: number[];
+  occurrenceFeatures: OccurrenceFeature[];
+}
+
+export interface OccurrenceFeature {
+  code: string;
+  label: string;
+  series: {
+    value: string;
+    hits: number[];
+    hitCount: number;
+    hitRate: number;
+  }[];
 }

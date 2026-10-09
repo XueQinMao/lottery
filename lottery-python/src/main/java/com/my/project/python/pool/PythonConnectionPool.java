@@ -18,14 +18,14 @@ public class PythonConnectionPool {
 
     private static final Logger logger = LoggerFactory.getLogger(PythonConnectionPool.class);
 
-    private BlockingQueue<PythonConnection> pool;
+    private BlockingQueue<PythonConnection> availableConnections;
 
 
     public PythonConnectionPool(int size, String scriptName, String modelDir) throws IOException {
-        pool = new ArrayBlockingQueue<>(size);
+        availableConnections = new ArrayBlockingQueue<>(size);
         IntStream.range(0, size).boxed().parallel().forEach(i->{
             try {
-                pool.offer(new PythonConnection(scriptName, modelDir));
+                availableConnections.offer(new PythonConnection(scriptName, modelDir));
             }catch (IOException e){
                 logger.error("初始化python连接失败", e);
             }
@@ -34,20 +34,20 @@ public class PythonConnectionPool {
     }
 
     public PythonConnection borrowConnection() throws InterruptedException {
-        return pool.take(); // 如果没有可用连接，会阻塞等待
+        return availableConnections.take(); // 如果没有可用连接，会阻塞等待
     }
 
     public Integer getSize(){
-        return pool.size();
+        return availableConnections.size();
     }
 
-    public void returnConnection(PythonConnection conn) {
-        pool.offer(conn);
+    public void returnConnection(PythonConnection connection) {
+        availableConnections.offer(connection);
     }
 
     public void shutdown() {
-        for (PythonConnection conn : pool) {
-            conn.close();
+        for (PythonConnection connection : availableConnections) {
+            connection.close();
         }
     }
 }

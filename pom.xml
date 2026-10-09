@@ -34,19 +34,14 @@
         <maven.compiler.release>21</maven.compiler.release>
         <maven.compiler.parameters>true</maven.compiler.parameters>
         <maven.compiler.encoding>UTF-8</maven.compiler.encoding>
-        <spring-ai-alibaba.version>1.1.2.0</spring-ai-alibaba.version>
     </properties>
     <dependencyManagement>
         <dependencies>
+            <!-- Preserve the effective Commons version previously supplied by the unused Agent framework. -->
             <dependency>
-                <groupId>com.baomidou</groupId>
-                <artifactId>mybatis-plus-generator</artifactId>
-                <version>3.5.9</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.velocity</groupId>
-                <artifactId>velocity-engine-core</artifactId>
-                <version>2.3</version>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-commons</artifactId>
+                <version>1.1.2</version>
             </dependency>
             <dependency>
                 <groupId>com.baomidou</groupId>
@@ -64,11 +59,6 @@
                 <groupId>org.mybatis</groupId>
                 <artifactId>mybatis-spring</artifactId>
                 <version>3.0.3</version>
-            </dependency>
-            <dependency>
-                <groupId>com.github.signaflo</groupId>
-                <artifactId>timeseries</artifactId>
-                <version>0.4</version>
             </dependency>
 
             <!-- Caffeine 本地缓存 -->
@@ -90,13 +80,6 @@
                 <groupId>org.lz4</groupId>
                 <artifactId>lz4-java</artifactId>
                 <version>1.8.0</version>
-            </dependency>
-
-            <!-- Spring AI Alibaba Agent 框架（可选扩展） -->
-            <dependency>
-                <groupId>com.alibaba.cloud.ai</groupId>
-                <artifactId>spring-ai-alibaba-agent-framework</artifactId>
-                <version>${spring-ai-alibaba.version}</version>
             </dependency>
 
             <!-- Spring AI DeepSeek 官方平台 -->

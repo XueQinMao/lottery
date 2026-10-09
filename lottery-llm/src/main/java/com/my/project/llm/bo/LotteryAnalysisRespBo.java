@@ -8,7 +8,9 @@ import java.util.List;
 /**
  * LotteryAnalysisRespBo
  *
- * <p>特征分析报告（透传调优 / 推荐 Prompt）。仅保留选号约束实际用到的模块：
+ * <p>新报告仅输出featureAnalysis、killNumbers、coldHotAnalysis、recentDrawRecords。
+ * 历史兼容字段仅用于读取旧文件，不向API或推荐Prompt序列化。
+ * <p>以下为旧结构说明：
  * <ul>
      *     <li>{@code featureForecast}：下一期形态目标（engine=java 或 llm）</li>
  *     <li>{@code killNumbers}：硬杀清单</li>
@@ -24,6 +26,10 @@ import java.util.List;
 @Data
 @Builder
 public class LotteryAnalysisRespBo {
+
+    private List<PatternFeatureAnalysisBo> featureAnalysis;
+    /** 大模型分支固定最近30期，最旧到最新；Java及旧报告按实际记录读取。 */
+    private List<LotteryAnalysisReqBo.DrawRecord> recentDrawRecords;
 
     /**
      * 杀号计算结果（可选）。
@@ -41,12 +47,18 @@ public class LotteryAnalysisRespBo {
      * 下一期三区比预测结果（可选）。
      * <p>由 {@code IThreeZoneRatioPredictService} 基于「频率先验 + 马尔可夫转移」混合模型预测。
      */
+    @com.alibaba.fastjson.annotation.JSONField(serialize = false)
+    @com.alibaba.fastjson2.annotation.JSONField(serialize = false)
+    @com.fasterxml.jackson.annotation.JsonIgnore
     private ThreeZoneRatioPredictBo predictedThreeZoneRatio;
 
     /**
      * 趋势均线分析结果（可选）。
      * <p>由 {@code MaAnalysisUtils} 同一份 MA5/MA10/MA20 按堆叠 + MA5 斜率产出 rising/rebounding/falling/cooling。
      */
+    @com.alibaba.fastjson.annotation.JSONField(serialize = false)
+    @com.alibaba.fastjson2.annotation.JSONField(serialize = false)
+    @com.fasterxml.jackson.annotation.JsonIgnore
     private TrendAnalysisBo trendAnalysis;
 
     /**
@@ -55,12 +67,18 @@ public class LotteryAnalysisRespBo {
      * {@code rising}（多头且斜率未下行）与 {@code rebounding}（空头/交叉但斜率向上）两类得到。
      * 选号时优先从该池中挑选，不足或与其他真硬冲突时再试其他号码。null 则忽略。
      */
+    @com.alibaba.fastjson.annotation.JSONField(serialize = false)
+    @com.alibaba.fastjson2.annotation.JSONField(serialize = false)
+    @com.fasterxml.jackson.annotation.JsonIgnore
     private List<Integer> risingTrendRedBalls;
 
     /**
      * 形态推算（调优/推荐使用）。
      * <p>由 {@code lottery.llm.analysis.engine} 决定：java=indexValues 差值趋势本地计算，llm=逐维大模型选值。
      */
+    @com.alibaba.fastjson.annotation.JSONField(serialize = false)
+    @com.alibaba.fastjson2.annotation.JSONField(serialize = false)
+    @com.fasterxml.jackson.annotation.JsonIgnore
     private FeatureForecastBo featureForecast;
 
     /**
