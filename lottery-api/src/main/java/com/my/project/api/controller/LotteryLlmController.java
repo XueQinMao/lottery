@@ -50,6 +50,7 @@ public class LotteryLlmController {
         try {
             return Result.success(lotteryFeatureAnalysisService.analyzeLatest(sampleSize));
         } catch (Exception e) {
+            e.printStackTrace();
             return Result.error(e.getMessage());
         }
     }

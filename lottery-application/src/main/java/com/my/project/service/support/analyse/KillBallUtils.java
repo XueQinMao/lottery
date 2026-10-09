@@ -116,6 +116,9 @@ public class KillBallUtils {
      */
     private static void printXxRedSourceDebug(List<KillNumberResultBo.KillItemBo> xxRed,
         Triple<List<Integer>, String, Integer> nextWinBalls) {
+        if(Objects.isNull(nextWinBalls)){
+            return;
+        }
         xxRed.stream().collect(Collectors.groupingBy(KillNumberResultBo.KillItemBo::getSource))
             .forEach((key, value) -> {
                 List<Integer> list = value.stream().map(KillNumberResultBo.KillItemBo::getBall).toList();
@@ -129,7 +132,7 @@ public class KillBallUtils {
     private static List<KillNumberResultBo.KillItemBo> calculateBlueKill(KillData data) {
         // 均线蓝球始终硬杀；遗漏/指数蓝球仅在条数都 ≤2 时进硬杀，否则进软杀
         var hardKillBlue = new ArrayList<>(data.lastBlue());
-        hardKillBlue.addAll(data.lastReds());
+        hardKillBlue.addAll(data.lastReds().stream().filter(bo -> bo.getBall()<=16).toList());
         hardKillBlue.addAll(data.killBlueByXx());
         return hardKillBlue;
     }
@@ -140,8 +143,8 @@ public class KillBallUtils {
     private static RedSplit splitRedKillBySource(KillData data) {
         var zsHardAndSoft = splitIntoHardAndSoft(data.zsRed(), "zs");
         var ylHardAndSoft = splitIntoHardAndSoft(data.ylRed(), "yl");
-        var jxHardAndSoft = splitIntoHardAndSoft(data.jxRed(), "jx");
-        return new RedSplit(zsHardAndSoft, ylHardAndSoft, jxHardAndSoft);
+//        var jxHardAndSoft = splitIntoHardAndSoft(data.jxRed(), "jx");
+        return new RedSplit(zsHardAndSoft, ylHardAndSoft, Pair.of(List.of(), List.of()));
     }
 
     /**
@@ -370,19 +373,21 @@ public class KillBallUtils {
         var moreThan3BlueBallBos =
             CollectionUtils.emptyIfNull(moreThan3BlueBalls).stream().map(ball -> Pair.of(ball, 1.0))
                 .map(boMapper("6期出现3次")).toList();
-        // 上期红球按近 5 期出现次数降序，取 5 个
-        var lastWinRandomRedBalls = lastWinRedBalls.stream()
-            .sorted(Comparator.comparingInt((Integer ball) -> readCountMap.getOrDefault(ball, 0))).limit(3)
-            .map(ball -> Pair.of(ball, 1.0)).map(boMapper("上期开出")).toList();
+        // 暂时屏蔽：上期开出每期占 3 个杀号，50 期期误杀约 52%，球级误杀≈随机
+        // var lastWinRandomRedBalls = lastWinRedBalls.stream()
+        //     .sorted(Comparator.comparingInt((Integer ball) -> readCountMap.getOrDefault(ball, 0))).limit(3)
+        //     .map(ball -> Pair.of(ball, 1.0)).map(boMapper("上期开出")).toList();
+        List<KillNumberResultBo.KillItemBo> lastWinRandomRedBalls = List.of();
         //杀掉3连号中间的号
         var consecutiveBeforeAfterRedBalls =
             getIfConsecutive(lastWinRedBalls).stream().filter(array -> array.length > 4).map(array -> {
                 return IntStream.range(1, array.length - 1).mapToObj(i -> Pair.of(array[i], 1.0)).toList();
             }).flatMap(List::stream).filter(p -> p.getLeft() > 0 && p.getLeft() < 34).map(boMapper("三连号中间号")).toList();
-        //两连号前后
-        var redConsecutiveKillCandidates = getIfConsecutive(lastWinRedBalls).stream().filter(array -> array.length == 4)
-            .map(array -> List.of(array[0], array[array.length - 1])).flatMap(List::stream)
-            .filter(ball -> ball > 0 && ball < 34).map(ball -> Pair.of(ball, 1.0)).map(boMapper("两连号前后号")).toList();
+        // 暂时屏蔽：两连号前后号期误杀约 42%
+        // var redConsecutiveKillCandidates = getIfConsecutive(lastWinRedBalls).stream().filter(array -> array.length == 4)
+        //     .map(array -> List.of(array[0], array[array.length - 1])).flatMap(List::stream)
+        //     .filter(ball -> ball > 0 && ball < 34).map(ball -> Pair.of(ball, 1.0)).map(boMapper("两连号前后号")).toList();
+        List<KillNumberResultBo.KillItemBo> redConsecutiveKillCandidates = List.of();
 
         //篮球杀掉前后号码
         var consecutiveBeforeAfterBlueBalls =
@@ -412,8 +417,10 @@ public class KillBallUtils {
                 consecutiveBeforeAfterRedNumbers, moreThanOmission35RedNumbers);
         }
 
-        var kdhBos = Stream.of(lastWinRedBalls.getLast() - lastWinRedBalls.getFirst()).map(ball -> Pair.of(ball, 1.0))
-            .map(boMapper("跨度直接杀")).toList();
+        // 暂时屏蔽：跨度直接杀与式2是同一公式，50 期误杀 24%
+        // var kdhBos = Stream.of(lastWinRedBalls.getLast() - lastWinRedBalls.getFirst()).map(ball -> Pair.of(ball, 1.0))
+        //     .map(boMapper("跨度直接杀")).toList();
+        List<KillNumberResultBo.KillItemBo> kdhBos = List.of();
 
         //和值杀
         int sum = lastWinRedBalls.stream().mapToInt(Integer::intValue).sum();
@@ -422,14 +429,152 @@ public class KillBallUtils {
             Stream.of(hzs).filter(ball -> ball > 0 && ball < 34).map(ball -> Pair.of(ball, 1.0)).map(boMapper("和值杀"))
                 .toList();
 
+        // 二、双色球18式实战杀红公式（剔除式7/8/10/11，保留14式）
+        var kill18ShiRed = getKillBallBy18ShiRed(historyRecords);
+
+        // 六套杀红公式之公式1-4（首尾跨度/首尾求和取余/第2+第5求和/奇偶均值四舍五入）
+        var killSixFormulasRed = getKillBallBySixFormulasRed(historyRecords);
+
         List<KillNumberResultBo.KillItemBo> redKillBallBos =
             Stream.of(moreThan3RedBallBos, lastWinRandomRedBalls, consecutiveBeforeAfterRedBalls,
-                    moreThanOmission35Reds, blueKillReds, hzsBos, kdhBos, redConsecutiveKillCandidates)
+                    moreThanOmission35Reds, blueKillReds, hzsBos, kdhBos, redConsecutiveKillCandidates, kill18ShiRed,
+                    killSixFormulasRed)
                 .filter(CollectionUtils::isNotEmpty).flatMap(List::stream).toList();
         List<KillNumberResultBo.KillItemBo> blueKillBallBos =
             Stream.of(moreThan3BlueBallBos, moreThanOmission35Blues, consecutiveBeforeAfterBlueBalls)
                 .flatMap(List::stream).toList();
         return Pair.of(redKillBallBos, blueKillBallBos);
+    }
+
+    /**
+     * 二、双色球18式实战杀红公式（剔除式7/8/10/11；式2、式9因误杀偏高暂时屏蔽）。
+     * <pre>
+     * 1.和值尾数+1  3.蓝球+3(超33减33)  4.第1位+5  5.第6位-5
+     * 6.相邻差值和尾数  12.奇偶差绝对值  13.(第1+第6)尾数
+     * 14.遗漏最大红球-3  15.(最大+最小)÷2  16.第5-第2  17.开奖日尾+10  18.热号区首尾和尾数
+     * </pre>
+     * 仅返回 1-33 范围内的有效杀号。
+     */
+    private static List<KillNumberResultBo.KillItemBo> getKillBallBy18ShiRed(List<HistoryRecord> historyRecords) {
+        if (CollectionUtils.isEmpty(historyRecords)) {
+            return List.of();
+        }
+        var first = historyRecords.getFirst();
+        List<Integer> lastReds =
+            Stream.of(first.getNum1(), first.getNum2(), first.getNum3(), first.getNum4(), first.getNum5(),
+                first.getNum6()).sorted().toList();
+        int sum = lastReds.stream().mapToInt(Integer::intValue).sum();
+        List<KillNumberResultBo.KillItemBo> result = new ArrayList<>();
+
+        // 式1：上期红球和值尾数+1
+        result.add(kill("式1和值尾数+1", (sum % 10) + 1));
+        // 暂时屏蔽：式2跨度与「跨度直接杀」重复，50 期误杀 24%
+        // result.add(kill("式2跨度", lastReds.getLast() - lastReds.getFirst()));
+        // 式3：上期蓝球+3，超出33则减33
+        int k3 = first.getSpecial() + 3;
+        if (k3 > 33) {
+            k3 -= 33;
+        }
+        result.add(kill("式3篮球+3", k3));
+        // 式4：上期第1位红球+5
+        result.add(kill("式4第1位+5", lastReds.getFirst() + 5));
+        // 式5：上期第6位红球-5
+        result.add(kill("式5第6位-5", lastReds.getLast() - 5));
+        // 式6：上期相邻两个红球差值相加取尾数
+        List<Integer> diffs =
+            IntStream.range(0, lastReds.size() - 1).map(i -> lastReds.get(i + 1) - lastReds.get(i)).boxed()
+                .distinct().toList();
+        result.add(kill("式6相邻差值和尾数", diffs.stream().mapToInt(Integer::intValue).sum() % 10));
+        // 暂时屏蔽：式9重复红球+2 期误杀约 26%
+        // if (historyRecords.size() >= 2) {
+        //     var lastLast = historyRecords.get(1);
+        //     List<Integer> lastLastReds =
+        //         Stream.of(lastLast.getNum1(), lastLast.getNum2(), lastLast.getNum3(), lastLast.getNum4(),
+        //             lastLast.getNum5(), lastLast.getNum6()).sorted().toList();
+        //     CollectionUtils.intersection(lastReds, lastLastReds).stream().map(b -> b + 2).filter(b -> b <= 33)
+        //         .forEach(b -> result.add(kill("式9重复红球+2", b)));
+        // }
+        // 式12：上期红球奇偶号码差值取绝对值
+        int oddCount = (int)lastReds.stream().filter(b -> b % 2 != 0).count();
+        result.add(kill("式12奇偶差绝对值", Math.abs(oddCount - (6 - oddCount))));
+        // 式13：上期红球第1位+第6位 和值尾数
+        result.add(kill("式13第1+第6尾数", (lastReds.getFirst() + lastReds.getLast()) % 10));
+        // 式14：上期遗漏值最大的红球号码-3
+        List<HistoryRecord> past = historyRecords.subList(0, Math.min(100, historyRecords.size()));
+        int maxOmissionRed = IntStream.rangeClosed(1, 33).boxed().max(Comparator.comparingInt(
+            b -> OmissionUtils.omissionBallAnalyzer(past, "red", b).getStats().getCurrentOmission())).orElse(0);
+        result.add(kill("式14遗漏最大红球-3", maxOmissionRed - 3));
+        // 式15：（上期最大红球+上期最小红球）÷2 取整
+        result.add(kill("式15大+小÷2", (lastReds.getLast() + lastReds.getFirst()) / 2));
+        // 式16：上期第5位红球-第2位红球
+        result.add(kill("式16第5-第2", lastReds.get(4) - lastReds.get(1)));
+        // 式17：上期开奖日日期尾数+10
+        result.add(kill("式17开奖日尾+10", (first.getOpenDate().getDayOfMonth() % 10) + 10));
+        // 式18：上期热号区首尾号码相加取尾数
+        List<Integer> redHot = ColdHotAnalysisUtils.calculate(past).getRedHotBalls();
+        if (!redHot.isEmpty()) {
+            result.add(kill("式18热号区首尾和尾数", (redHot.get(0) + redHot.get(redHot.size() - 1)) % 10));
+        }
+
+        // 仅保留 1-33 范围内的有效杀号
+        return result.stream().filter(bo -> bo.getBall() >= 1 && bo.getBall() <= 33).toList();
+    }
+
+    /**
+     * 六套杀红公式之公式1-4（单号公式）：
+     * <pre>
+     * 1.首尾跨度杀号法：凤尾 - 龙头
+     * 2.红球首尾求和取余杀号法：龙头 + 凤尾，>33 减 33
+     * 3.第二位 + 第五位求和杀号：第2位 + 第5位，>33 反复减 33
+     * 4.奇偶均值四舍五入杀号：奇数中最小 + 最大 ÷2 四舍五入，>33 减 33
+     * </pre>
+     * 仅返回 1-33 范围内的有效杀号。
+     */
+    private static List<KillNumberResultBo.KillItemBo> getKillBallBySixFormulasRed(
+        List<HistoryRecord> historyRecords) {
+        if (CollectionUtils.isEmpty(historyRecords)) {
+            return List.of();
+        }
+        var first = historyRecords.getFirst();
+        List<Integer> lastReds =
+            Stream.of(first.getNum1(), first.getNum2(), first.getNum3(), first.getNum4(), first.getNum5(),
+                first.getNum6()).sorted().toList();
+        List<KillNumberResultBo.KillItemBo> result = new ArrayList<>();
+
+        // 公式1：首尾跨度杀号法（凤尾 - 龙头）
+        result.add(kill("公式1首尾跨度", lastReds.getLast() - lastReds.getFirst()));
+
+        // 公式2：红球首尾求和取余杀号法（龙头 + 凤尾，>33 减 33）
+        int k2 = lastReds.getFirst() + lastReds.getLast();
+        if (k2 > 33) {
+            k2 -= 33;
+        }
+        result.add(kill("公式2首尾求和取余", k2));
+
+        // 公式3：第二位 + 第五位求和杀号（>33 反复减 33）
+        int k3 = lastReds.get(1) + lastReds.get(4);
+        while (k3 > 33) {
+            k3 -= 33;
+        }
+        result.add(kill("公式3第2+第5求和", k3));
+
+        // 公式4：奇偶均值四舍五入杀号（奇数中最小 + 最大 ÷2 四舍五入，>33 减 33）
+        List<Integer> odds = lastReds.stream().filter(b -> b % 2 != 0).sorted().toList();
+        if (odds.size() >= 2) {
+            int avg = Math.round((odds.getFirst() + odds.getLast()) / 2.0f);
+            if (avg > 33) {
+                avg -= 33;
+            }
+            result.add(kill("公式4奇偶均值四舍五入", avg));
+        }
+
+        // 仅保留 1-33 范围内的有效杀号
+        return result.stream().filter(bo -> bo.getBall() >= 1 && bo.getBall() <= 33).toList();
+    }
+
+    /** 构造红球杀号项（score=1.0） */
+    private static KillNumberResultBo.KillItemBo kill(String source, int ball) {
+        return boMapper(source).apply(Pair.of(ball, 1.0));
     }
 
     /**

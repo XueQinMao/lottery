@@ -5,6 +5,7 @@ import com.my.project.llm.bo.KillNumberResultBo;
 import com.my.project.persistence.entity.HistoryRecord;
 import com.my.project.persistence.repository.IHistoryRecordRepository;
 import com.my.project.service.support.OmissionUtils;
+import com.my.project.service.support.analyse.ColdHotAnalysisUtils;
 import com.my.project.service.support.analyse.KillBallUtils;
 import com.my.project.service.support.analyse.MaAnalysisUtils;
 import jakarta.annotation.Resource;
@@ -294,17 +295,19 @@ class MaAnalysisUtilTest {
     }
 
     /**
-     * 和值杀号发：上一期的和值的尾数->尾数对应号码的尾数号杀掉（如和值107，那么下期 07 17 27）√
-     * 跨度杀号法：最大号-最小号然后取尾数 ->下期对应的尾数杀掉（如32-7=25 那么下期05 15 25）√
-     * 上期开出的号码 + 3 5 7 如果范围在33内就直接杀了  X
-     * 跨度对应的号码直接杀了 √
-     * 上期篮球+3 -3的球杀了 √
-     * 连号前后杀了  √
-     * 和值%100 直接杀 √
+     * 和值杀号发：上一期的和值的尾数->尾数对应号码的尾数号杀掉（如和值107，那么下期 07 17 27）√ 跨度杀号法：最大号-最小号然后取尾数 ->下期对应的尾数杀掉（如32-7=25 那么下期05 15 25）√
+     * 上期开出的号码 + 3 5 7 如果范围在33内就直接杀了  X 跨度对应的号码直接杀了 √ 上期篮球+3 -3的球杀了 √ 连号前后杀了  √ 和值%100 直接杀 √
      *
+     * 二、双色球18式实战杀红公式
+     * 第1-6式：基础简易公式  1.和值尾数+1  2.最大-最小  3.蓝球+3(超33减33)  4.第1位+5  5.第6位-5  6.相邻差值和尾数
+     * 第7-12式：进阶精准公式 7.(第2+第4)÷2  8.和值÷6  9.重复红球+2  10.33-第3位  11.蓝球×2(超33减33)  12.奇偶差绝对值
+     * 第13-18式：高准确率公式 13.(第1+第6)尾数  14.遗漏最大红球-3  15.(最大+最小)÷2  16.第5-第2  17.开奖日尾数+10  18.热号区首尾和尾数
      */
     @Test
-    public void test_20290922() {
+    public void test_20290923() {
+        // 18式实战杀红公式误杀次数统计（下标 1-18 对应式号）
+        AtomicInteger[] hits = IntStream.range(0, 19).mapToObj(i -> new AtomicInteger(0)).toArray(AtomicInteger[]::new);
+        AtomicInteger total = new AtomicInteger(0);
         List<HistoryRecord> windows =
             historyRecordRepository.lambdaQuery().orderByDesc(HistoryRecord::getOpenDate).last(" limit 31").list();
         windows.forEach(w -> {
@@ -313,48 +316,265 @@ class MaAnalysisUtilTest {
             if (Objects.isNull(next)) {
                 return;
             }
-            List<Integer> nextWins =
-                List.of(next.getNum1(), next.getNum2(), next.getNum3(), next.getNum4(), next.getNum5(), next.getNum6());
+            HistoryRecord lastLast = historyRecordRepository.lambdaQuery()
+                .eq(HistoryRecord::getPeriod, String.valueOf(Integer.parseInt(w.getPeriod()) - 1)).one();
+            List<HistoryRecord> past =
+                historyRecordRepository.lambdaQuery().le(HistoryRecord::getOpenDate, w.getOpenDate())
+                    .orderByDesc(HistoryRecord::getOpenDate).last(" limit 100").list();
+
             List<Integer> currenWins =
                 Stream.of(w.getNum1(), w.getNum2(), w.getNum3(), w.getNum4(), w.getNum5(), w.getNum6()).sorted()
                     .toList();
-            //和值尾数
+            List<Integer> nextWins =
+                List.of(next.getNum1(), next.getNum2(), next.getNum3(), next.getNum4(), next.getNum5(), next.getNum6());
+            List<Integer> lastLastWins = Objects.isNull(lastLast)
+                ? List.of()
+                : Stream.of(lastLast.getNum1(), lastLast.getNum2(), lastLast.getNum3(), lastLast.getNum4(),
+                    lastLast.getNum5(), lastLast.getNum6()).sorted().toList();
+
+            System.out.println("第" + next.getPeriod() + "  开奖：" + nextWins + "  上期：" + currenWins);
+            total.getAndAdd(1);
+
+            // 收集本组 18 式全部杀号（去重、仅 1-33 范围）
+            List<Integer> allKills = new ArrayList<>();
             int sum = currenWins.stream().mapToInt(Integer::intValue).sum();
-            //            var hzws = sum % 10;
-            //            List<Integer> hzwsKillBalls = IntStream.rangeClosed(1, 33).boxed().filter(ball -> (ball % 10) == hzws).toList();
-            //            System.out.println("和值尾数杀："+hzwsKillBalls.size()+" 误杀："+CollectionUtils.intersection(hzwsKillBalls, nextWins));
-            //
-            //            //跨度尾数杀
-            //            var kdws = (currenWins.getLast()-currenWins.getFirst()) % 10;
-            //            List<Integer> kdwsKillBalls = IntStream.rangeClosed(1, 33).boxed().filter(ball -> (ball % 10) == kdws).toList();
-            //            System.out.println("跨度尾数杀："+kdwsKillBalls.size()+" 误杀："+CollectionUtils.intersection(kdwsKillBalls, nextWins));
 
-            var kdh = currenWins.getLast() - currenWins.getFirst();
-            System.out.println("跨度号杀：1 误杀：" + nextWins.contains(kdh));
-
-            //和值杀
-            var hzs = sum % 100;
-            List<Integer> list = Stream.of(hzs).filter(ball -> ball > 0 && ball < 34).toList();
-            if (CollectionUtils.isNotEmpty(list)) {
-                System.out.println("和值杀：" + list + " 误杀：" + nextWins.contains(hzs));
+            // 式1：上期红球和值尾数+1
+            trackKill("式1 和值尾数+1", (sum % 10) + 1, nextWins, hits[1], allKills);
+            // 式2：上期红球最大号减最小号
+//            trackKill("式2 跨度(大-小)", currenWins.getLast() - currenWins.getFirst(), nextWins, hits[2], allKills);
+            // 式3：上期蓝球+3，超出33则减33
+            int k3 = w.getSpecial() + 3;
+            if (k3 > 33) { k3 -= 33; }
+            trackKill("式3 篮球+3", k3, nextWins, hits[3], allKills);
+            // 式4：上期第1位红球+5
+            trackKill("式4 第1位+5", currenWins.getFirst() + 5, nextWins, hits[4], allKills);
+            // 式5：上期第6位红球-5
+            trackKill("式5 第6位-5", currenWins.getLast() - 5, nextWins, hits[5], allKills);
+            // 式6：上期相邻两个红球差值相加取尾数
+            List<Integer> diffs =
+                IntStream.range(0, currenWins.size() - 1).map(i -> currenWins.get(i + 1) - currenWins.get(i)).boxed()
+                    .distinct().toList();
+            trackKill("式6 相邻差值和尾数", diffs.stream().mapToInt(Integer::intValue).sum() % 10, nextWins, hits[6],
+                allKills);
+//            // 式7：（上期红球第2位+第4位）÷2 取整
+//            trackKill("式7 (第2+第4)÷2", (currenWins.get(1) + currenWins.get(3)) / 2, nextWins, hits[7], allKills);
+//            // 式8：上期红球和值÷6 取整
+//            trackKill("式8 和值÷6", sum / 6, nextWins, hits[8], allKills);
+            // 式9：上期重复红球号码+2
+            List<Integer> k9 = CollectionUtils.intersection(currenWins, lastLastWins).stream()
+                .map(b -> b + 2).filter(b -> b <= 33).toList();
+            trackKillList("式9 重复红球+2", k9, nextWins, hits[9], allKills);
+//            // 式10：33 减上期第3位红球
+//            trackKill("式10 33-第3位", 33 - currenWins.get(2), nextWins, hits[10], allKills);
+            // 式11：上期蓝球×2，超出33减33
+            int k11 = w.getSpecial() * 2;
+            if (k11 > 33) { k11 -= 33; }
+//            trackKill("式11 篮球×2", k11, nextWins, hits[11], allKills);
+            // 式12：上期红球奇偶号码差值取绝对值
+            int oddCount = (int)currenWins.stream().filter(b -> b % 2 != 0).count();
+            trackKill("式12 奇偶差绝对值", Math.abs(oddCount - (6 - oddCount)), nextWins, hits[12], allKills);
+            // 式13：上期红球第1位+第6位 和值尾数
+            trackKill("式13 (第1+第6)尾数", (currenWins.getFirst() + currenWins.getLast()) % 10, nextWins, hits[13],
+                allKills);
+            // 式14：上期遗漏值最大的红球号码-3
+            int maxOmissionRed = IntStream.rangeClosed(1, 33).boxed().max(Comparator.comparingInt(
+                b -> OmissionUtils.omissionBallAnalyzer(past, "red", b).getStats().getCurrentOmission())).orElse(0);
+            trackKill("式14 遗漏最大红球-3", maxOmissionRed - 3, nextWins, hits[14], allKills);
+            // 式15：（上期最大红球+上期最小红球）÷2 取整
+            trackKill("式15 (大+小)÷2", (currenWins.getLast() + currenWins.getFirst()) / 2, nextWins, hits[15],
+                allKills);
+            // 式16：上期第5位红球-第2位红球
+            trackKill("式16 第5-第2", currenWins.get(4) - currenWins.get(1), nextWins, hits[16], allKills);
+            // 式17：上期开奖日日期尾数+10
+            int k17 = (w.getOpenDate().getDayOfMonth() % 10) + 10;
+            trackKill("式17 开奖日尾+10", k17, nextWins, hits[17], allKills);
+            // 式18：上期热号区首尾号码相加取尾数
+            List<Integer> redHot = ColdHotAnalysisUtils.calculate(past).getRedHotBalls();
+            if (redHot.isEmpty()) {
+                System.out.println("式18 热号区首尾和尾数：无热号 跳过");
+            } else {
+                trackKill("式18 热号区首尾和尾数", (redHot.get(0) + redHot.get(redHot.size() - 1)) % 10, nextWins,
+                    hits[18], allKills);
             }
 
-            //            List<Integer> list1 =
-            //                Stream.of(next.getSpecial() - 3, next.getSpecial() + 3).filter(ball -> ball >= 0).toList();
-            //            System.out.println("篮球+-3杀："+list1.size()+" 误杀："+CollectionUtils.intersection(list1, nextWins));
-            var consecutiveBeforeAfterRedBalls =
-                getIfConsecutive(currenWins).stream().filter(array -> array.length == 4)
-                    .map(array -> List.of(array[0], array[array.length - 1])).flatMap(List::stream).toList();
-            System.out.println(
-                "2连号前后杀：" + consecutiveBeforeAfterRedBalls.size() + "|" + consecutiveBeforeAfterRedBalls + " 误杀：" + CollectionUtils.intersection(
-                    consecutiveBeforeAfterRedBalls, nextWins));
-
-            var allList =
-                Stream.of(List.of(kdh), list, consecutiveBeforeAfterRedBalls).flatMap(List::stream).distinct().toList();
-            System.out.println(
-                next.getPeriod() + "***************************** " + allList.size() + "  误杀：" + CollectionUtils.intersection(
-                    allList, nextWins));
+            // 本期总杀球数（去重）与总误杀数
+            List<Integer> distinctKills = allKills.stream().distinct().sorted().toList();
+            var wrongKills = CollectionUtils.intersection(distinctKills, nextWins);
+            System.out.println("**************************总杀球：" + distinctKills.size() + " " + distinctKills
+                + " 总误杀：" + wrongKills.size() + " " + wrongKills);
         });
+
+        System.out.println("==== 18式误杀统计（共 " + total.get() + " 期）====");
+        for (int i = 1; i <= 18; i++) {
+            System.out.println("式" + i + " 误杀次数：" + hits[i].get() + " / " + total.get());
+        }
+    }
+
+    /**
+     * 六套杀红公式（综合汇总杀号池）：
+     * 1.首尾跨度杀号法：凤尾-龙头（单号）
+     * 2.红球首尾求和取余杀号法：龙头+凤尾，>33 减 33（单号）
+     * 3.第二位+第五位求和杀号：第2位+第5位，>33 反复减 33（单号）
+     * 4.奇偶均值四舍五入杀号：奇数中最小+最大 ÷2 四舍五入，>33 减 33（单号）
+     * 5.三区分布过滤筛选杀号：回看近3期，从最热区按近10期频次降序取7个号
+     * 6.尾数频次统计筛选杀号：统计近8期尾数频次，取最高2个尾数，每尾数按近10期频次降序取4个号
+     */
+    @Test
+    public void test_20260923_six_formulas() {
+        AtomicInteger[] hits = IntStream.range(0, 7).mapToObj(i -> new AtomicInteger(0)).toArray(AtomicInteger[]::new);
+        AtomicInteger total = new AtomicInteger(0);
+        List<HistoryRecord> windows =
+            historyRecordRepository.lambdaQuery().orderByDesc(HistoryRecord::getOpenDate).last(" limit 31").list();
+        windows.forEach(w -> {
+            HistoryRecord next = historyRecordRepository.lambdaQuery()
+                .eq(HistoryRecord::getPeriod, String.valueOf(Integer.parseInt(w.getPeriod()) + 1)).one();
+            if (Objects.isNull(next)) {
+                return;
+            }
+            List<HistoryRecord> past10 =
+                historyRecordRepository.lambdaQuery().le(HistoryRecord::getOpenDate, w.getOpenDate())
+                    .orderByDesc(HistoryRecord::getOpenDate).last(" limit 10").list();
+            List<HistoryRecord> past8 =
+                historyRecordRepository.lambdaQuery().le(HistoryRecord::getOpenDate, w.getOpenDate())
+                    .orderByDesc(HistoryRecord::getOpenDate).last(" limit 8").list();
+
+            List<Integer> currenWins =
+                Stream.of(w.getNum1(), w.getNum2(), w.getNum3(), w.getNum4(), w.getNum5(), w.getNum6()).sorted()
+                    .toList();
+            List<Integer> nextWins =
+                List.of(next.getNum1(), next.getNum2(), next.getNum3(), next.getNum4(), next.getNum5(), next.getNum6());
+            System.out.println("第" + next.getPeriod() + "  开奖：" + nextWins + "  上期：" + currenWins);
+            total.getAndAdd(1);
+
+            List<Integer> allKills = new ArrayList<>();
+
+            // 公式1：首尾跨度杀号法（凤尾 - 龙头）
+            trackKill("公式1 首尾跨度", currenWins.getLast() - currenWins.getFirst(), nextWins, hits[1], allKills);
+
+            // 公式2：红球首尾求和取余杀号法（龙头 + 凤尾，>33 减 33）
+            int k2 = currenWins.getFirst() + currenWins.getLast();
+            if (k2 > 33) { k2 -= 33; }
+            trackKill("公式2 首尾求和取余", k2, nextWins, hits[2], allKills);
+
+            // 公式3：第二位 + 第五位求和杀号（>33 反复减 33）
+            int k3 = currenWins.get(1) + currenWins.get(4);
+            while (k3 > 33) { k3 -= 33; }
+            trackKill("公式3 第2+第5求和", k3, nextWins, hits[3], allKills);
+
+            // 公式4：奇偶均值四舍五入杀号（奇数中最小+最大 ÷2 四舍五入，>33 减 33）
+            List<Integer> odds = currenWins.stream().filter(b -> b % 2 != 0).sorted().toList();
+            if (odds.size() >= 2) {
+                int avg = Math.round((odds.getFirst() + odds.getLast()) / 2.0f);
+                if (avg > 33) { avg -= 33; }
+                trackKill("公式4 奇偶均值四舍五入", avg, nextWins, hits[4], allKills);
+            } else {
+                System.out.println("公式4 奇偶均值四舍五入：奇数不足2个 跳过");
+            }
+
+            // 公式5：三区分布过滤筛选杀号（近3期最热区，按近10期频次降序取7个号）
+            List<Integer> k5 = pickHotZoneKills(past10, 3, 7);
+//            trackKillList("公式5 三区分布筛选", k5, nextWins, hits[5], allKills);
+
+            // 公式6：尾数频次统计筛选杀号（近8期最高频2个尾数，每尾数按近10期频次降序取4个号）
+            List<Integer> k6 = pickHotTailKills(past8, past10, 2, 4);
+//            trackKillList("公式6 尾数频次筛选", k6, nextWins, hits[6], allKills);
+
+            List<Integer> distinctKills = allKills.stream().distinct().sorted().toList();
+            var wrongKills = CollectionUtils.intersection(distinctKills, nextWins);
+            System.out.println("**************************总杀球：" + distinctKills.size() + " " + distinctKills
+                + " 总误杀：" + wrongKills.size() + " " + wrongKills);
+        });
+
+        System.out.println("==== 六套公式误杀统计（共 " + total.get() + " 期）====");
+        for (int i = 1; i <= 6; i++) {
+            System.out.println("公式" + i + " 误杀次数：" + hits[i].get() + " / " + total.get());
+        }
+    }
+
+    /** 单号杀：打印并统计误杀（仅 1-33 范围内才计入误杀与总杀球） */
+    private void trackKill(String formula, int kill, List<Integer> nextWins, AtomicInteger counter,
+        List<Integer> allKills) {
+        boolean hit = kill >= 1 && kill <= 33 && nextWins.contains(kill);
+        if (kill >= 1 && kill <= 33) {
+            allKills.add(kill);
+        }
+        if (hit) {
+            counter.addAndGet(1);
+        }
+        System.out.println(formula + "：杀 " + kill + " 误杀：" + hit);
+    }
+
+    /** 多号杀：打印并统计误杀 */
+    private void trackKillList(String formula, List<Integer> kills, List<Integer> nextWins, AtomicInteger counter,
+        List<Integer> allKills) {
+        allKills.addAll(kills);
+        var hit = CollectionUtils.intersection(kills, nextWins);
+        if (!hit.isEmpty()) {
+            counter.addAndGet(1);
+        }
+        System.out.println(formula + "：杀 " + kills + " 误杀：" + hit);
+    }
+
+    /**
+     * 公式5：回看近 lookBack 期，统计一区(1-11)/二区(12-22)/三区(23-33) 开出号码总数，
+     * 取最热区，从该区 11 个号码中按近10期出现频次降序、同频次按号码升序，取前 pickCount 个号。
+     */
+    private List<Integer> pickHotZoneKills(List<HistoryRecord> past, int lookBack, int pickCount) {
+        int actualLook = Math.min(lookBack, past.size());
+        Map<Integer, Integer> zoneCount = new HashMap<>(Map.of(1, 0, 2, 0, 3, 0));
+        Map<Integer, Integer> freq10 = new HashMap<>();
+        for (int i = 0; i < past.size(); i++) {
+            List<Integer> reds = Stream.of(past.get(i).getNum1(), past.get(i).getNum2(), past.get(i).getNum3(),
+                past.get(i).getNum4(), past.get(i).getNum5(), past.get(i).getNum6()).toList();
+            for (int r : reds) {
+                freq10.merge(r, 1, Integer::sum);
+                if (i < actualLook) {
+                    int zone = r <= 11 ? 1 : (r <= 22 ? 2 : 3);
+                    zoneCount.merge(zone, 1, Integer::sum);
+                }
+            }
+        }
+        int hotZone = zoneCount.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(1);
+        int zoneStart = hotZone == 1 ? 1 : (hotZone == 2 ? 12 : 23);
+        int zoneEnd = hotZone == 1 ? 11 : (hotZone == 2 ? 22 : 33);
+        System.out.println("  公式5 最热区=" + hotZone + "（" + zoneStart + "-" + zoneEnd + "）近" + actualLook
+            + "期开出 " + zoneCount.get(hotZone) + " 个");
+        return IntStream.rangeClosed(zoneStart, zoneEnd).boxed()
+            .sorted(Comparator.comparingInt((Integer b) -> freq10.getOrDefault(b, 0)).reversed()
+                .thenComparing(Comparator.naturalOrder()))
+            .limit(pickCount).toList();
+    }
+
+    /**
+     * 公式6：统计近 tailLookBack 期 0-9 尾数频次，取最高的 topTailCount 个尾数；
+     * 每个尾数下的号码按近10期出现频次降序、同频次按号码升序，取前 pickPerTail 个号。
+     */
+    private List<Integer> pickHotTailKills(List<HistoryRecord> pastTail, List<HistoryRecord> past10,
+        int topTailCount, int pickPerTail) {
+        Map<Integer, Integer> tailFreq = new HashMap<>();
+        for (HistoryRecord h : pastTail) {
+            Stream.of(h.getNum1(), h.getNum2(), h.getNum3(), h.getNum4(), h.getNum5(), h.getNum6())
+                .forEach(b -> tailFreq.merge(b % 10, 1, Integer::sum));
+        }
+        Map<Integer, Integer> freq10 = new HashMap<>();
+        for (HistoryRecord h : past10) {
+            Stream.of(h.getNum1(), h.getNum2(), h.getNum3(), h.getNum4(), h.getNum5(), h.getNum6())
+                .forEach(b -> freq10.merge(b, 1, Integer::sum));
+        }
+        List<Integer> topTails = tailFreq.entrySet().stream()
+            .sorted(Map.Entry.<Integer, Integer>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()))
+            .limit(topTailCount).map(Map.Entry::getKey).toList();
+        System.out.println("  公式6 高频尾数=" + topTails + " 近" + pastTail.size() + "期尾数频次=" + tailFreq);
+        List<Integer> kills = new ArrayList<>();
+        for (int tail : topTails) {
+            List<Integer> tailBalls = IntStream.rangeClosed(1, 33).boxed().filter(b -> b % 10 == tail)
+                .sorted(Comparator.comparingInt((Integer b) -> freq10.getOrDefault(b, 0)).reversed()
+                    .thenComparing(Comparator.naturalOrder()))
+                .limit(pickPerTail).toList();
+            kills.addAll(tailBalls);
+        }
+        return kills;
     }
 
     private static List<Integer[]> getIfConsecutive(List<Integer> lastWinRedBalls) {
