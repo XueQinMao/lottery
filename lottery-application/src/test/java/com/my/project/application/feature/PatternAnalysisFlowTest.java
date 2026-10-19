@@ -63,7 +63,7 @@ class PatternAnalysisFlowTest {
             verify(service, never()).forecastFeaturesByIndex(anyList(), anyList());
             String endpoint = cn.hutool.crypto.digest.DigestUtil
                 .md5Hex("https://dashscope.aliyuncs.com/compatible-mode").substring(0, 12);
-            verify(cache).get(eq("feature.analysis.cache:pattern-v5:llm-pattern:bailian:qwen-flash:" + endpoint + ":P120:30"), any());
+            verify(cache).get(eq("feature.analysis.cache:pattern-v7:llm-pattern:bailian:qwen-flash:" + endpoint + ":P120:30"), any());
             verify(history).getRecordsEndingAt("P120", 100000);
 
             ReflectionTestUtils.setField(service, "analysisEngine", "java");
@@ -71,7 +71,7 @@ class PatternAnalysisFlowTest {
             doReturn(forecast).when(service).forecastFeaturesByIndex(anyList(), eq(records));
             when(support.adaptJava(forecast, records)).thenReturn(items("OK"));
             service.analyzeLatest(30);
-            verify(cache).get(eq("feature.analysis.cache:pattern-v5:java:P120:30"), any());
+            verify(cache).get(eq("feature.analysis.cache:pattern-v7:java:P120:30"), any());
         }
     }
 

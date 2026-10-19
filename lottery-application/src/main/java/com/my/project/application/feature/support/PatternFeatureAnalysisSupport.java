@@ -33,10 +33,16 @@ public class PatternFeatureAnalysisSupport implements AutoCloseable {
 
     public List<PatternFeatureAnalysisBo> analyze(List<HistoryRecord> newestFirst) {
         List<PatternFeatureAnalysisReqBo> requests = prepare(newestFirst);
-        log.info("形态分析已提交：执行模式=单线程，特征数={}，截止期号={}", requests.size(), newestFirst.getFirst().getPeriod());
+        log.info("形态分析已提交：执行模式=单线程，报告特征数={}，模型分析项数={}，截止期号={}",
+            requests.size(), requests.stream().filter(request -> !"threeZone".equals(request.getCode())).count(),
+            newestFirst.getFirst().getPeriod());
         List<CompletableFuture<PatternFeatureAnalysisBo>> futures = requests.stream()
-            .map(request -> CompletableFuture.supplyAsync(() -> analyzeOne(request), executor)).toList();
-        return futures.stream().map(CompletableFuture::join).toList();
+            .map(request -> "threeZone".equals(request.getCode())
+                ? CompletableFuture.completedFuture(ZoneCandidateConsistency.fromHistory(request))
+                : CompletableFuture.supplyAsync(() -> analyzeOne(request), executor)).toList();
+        var results = futures.stream().map(CompletableFuture::join).toList();
+        ZoneCandidateConsistency.reconcile(results);
+        return results;
     }
 
     private PatternFeatureAnalysisBo analyzeOne(PatternFeatureAnalysisReqBo request) {

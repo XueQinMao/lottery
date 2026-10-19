@@ -56,6 +56,17 @@ public final class PatternAnalysisParser {
         if (!reasons.find()) throw new IllegalArgumentException("缺少断档池理由");
         String unlikelyReason = reasons.group(1).strip();
         String summary = raw.substring(first.length(), split).strip();
+        if (PatternSequenceEvidence.requiresExactSummary(req)) {
+            var description = Pattern.compile("(?m)^\\h*形态描述\\h*[：:]\\h*(\\S[^\\r\\n]*)$").matcher(summary);
+            if (!description.find() || !PatternSequenceEvidence.describe(req).equals(description.group(1).strip())) {
+                throw new IllegalArgumentException("蓝球形态描述必须原样引用程序核实的走势事实：" + PatternSequenceEvidence.describe(req));
+            }
+            // 历史事实只在校验过的描述中出现，推演理由只讨论未来假设。
+            if (Pattern.compile("(?<!下)[0-9０-９一二三四五六七八九十两]+[期次]|最近|过去|此前|历史")
+                    .matcher(likelyReason + unlikelyReason).find()) {
+                throw new IllegalArgumentException("蓝球推演理由只写未来延续或切换假设，不重述历史期号、次数或序列；事实放在形态描述中");
+            }
+        }
         if (!Pattern.compile("(?m)^\\h*形态描述\\h*[：:]\\h*\\S+").matcher(summary).find()) {
             throw new IllegalArgumentException("缺少中文形态描述");
         }

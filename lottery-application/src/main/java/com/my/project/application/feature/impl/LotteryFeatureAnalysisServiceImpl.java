@@ -93,7 +93,7 @@ public class LotteryFeatureAnalysisServiceImpl implements LotteryFeatureAnalysis
         String cacheScope = "java".equals(analysisEngine) ? "java"
             : "llm-pattern:bailian:" + analysisModel + ":" +
                 cn.hutool.crypto.digest.DigestUtil.md5Hex(analysisBaseUrl).substring(0, 12);
-        String cacheKey = CACHE_KEY_PREFIX + ":pattern-v5:" + cacheScope + ":" + period + ":" + count;
+        String cacheKey = CACHE_KEY_PREFIX + ":pattern-v7:" + cacheScope + ":" + period + ":" + count;
         var analysisReport = multiLevelCache.get(cacheKey, k -> {
             var result = doAnalyze(count, period);
             // 特征预测解释生成后落盘并写入文件记录表，供历史列表回看

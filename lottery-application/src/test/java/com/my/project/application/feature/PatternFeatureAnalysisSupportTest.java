@@ -52,18 +52,25 @@ class PatternFeatureAnalysisSupportTest {
     }
 
     @Test
-    void keepsEighteenIndependentFeatureCallsAndPreservesOrder() {
+    void keepsEighteenReportItemsWithSeventeenModelCallsAndPreservesOrder() {
         var llm = mock(LotteryAnalysisService.class);
         when(llm.analyzePattern(any())).thenAnswer(call -> {
             PatternFeatureAnalysisReqBo req = call.getArgument(0);
-            return PatternFeatureAnalysisBo.builder().code(req.getCode()).status("OK").build();
+            return PatternFeatureAnalysisBo.builder().code(req.getCode()).label(req.getLabel()).status("OK")
+                .observations(req.getObservations()).likelyValues(List.of("2")).unlikelyValues(List.of()).build();
         });
         var support = new PatternFeatureAnalysisSupport(llm);
         var result = support.analyze(records());
         assertEquals(18, result.size());
         assertEquals("tail", result.get(15).getCode());
         assertEquals("blueColdWarmHot", result.getLast().getCode());
-        verify(llm, times(18)).analyzePattern(any());
+        assertEquals("threeZone", result.get(7).getCode());
+        assertEquals("derived-zone-counts", result.get(7).getSource());
+        assertEquals("OK", result.get(7).getStatus());
+        assertEquals(List.of("2:2:2"), result.get(7).getLikelyValues());
+        assertEquals(30, result.get(7).getObservations().size());
+        verify(llm, times(17)).analyzePattern(any());
+        verify(llm, never()).analyzePattern(argThat(req -> "threeZone".equals(req.getCode())));
     }
 
     private List<HistoryRecord> records() {

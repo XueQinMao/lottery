@@ -34,7 +34,8 @@ class PatternAnalysisConcurrencyTest {
             try {
                 assertTrue(release.await(5, TimeUnit.SECONDS));
                 PatternFeatureAnalysisReqBo request = call.getArgument(0);
-                return PatternFeatureAnalysisBo.builder().code(request.getCode()).status("OK").build();
+                return PatternFeatureAnalysisBo.builder().code(request.getCode()).label(request.getLabel())
+                    .status("OK").likelyValues(java.util.List.of("2")).unlikelyValues(java.util.List.of()).build();
             } finally {
                 active.decrementAndGet();
             }
@@ -57,7 +58,10 @@ class PatternAnalysisConcurrencyTest {
                 firstReport.stream().map(PatternFeatureAnalysisBo::getCode).toList());
             assertEquals(firstReport, secondReport);
             assertEquals(1, maximum.get());
-            verify(model, times(36)).analyzePattern(any());
+            assertEquals(18, firstReport.size());
+            assertEquals(java.util.List.of("2:2:2"), firstReport.get(7).getLikelyValues());
+            verify(model, times(34)).analyzePattern(any());
+            verify(model, never()).analyzePattern(argThat(req -> "threeZone".equals(req.getCode())));
         }
     }
 }

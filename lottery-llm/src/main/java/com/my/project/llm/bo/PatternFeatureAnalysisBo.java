@@ -14,7 +14,7 @@ import java.util.List;
 public class PatternFeatureAnalysisBo {
     private String code;
     private String label;
-    /** OK / UNAVAILABLE；source 为 llm-pattern 或 java。 */
+    /** OK / UNAVAILABLE；source 为 llm-pattern、derived-zone-counts、java 或 legacy。 */
     private String status;
     private String source;
     /** 本次形态观察的实际期数；旧报告可能为空。 */

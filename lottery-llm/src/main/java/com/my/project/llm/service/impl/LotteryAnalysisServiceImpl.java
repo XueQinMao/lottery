@@ -4,6 +4,7 @@ import com.my.project.llm.prompt.LotteryPatternAnalysisPrompt;
 import com.my.project.llm.bo.PatternFeatureAnalysisBo;
 import com.my.project.llm.bo.PatternFeatureAnalysisReqBo;
 import com.my.project.llm.support.PatternAnalysisParser;
+import com.my.project.llm.support.PatternSequenceEvidence;
 import com.my.project.llm.service.LotteryAnalysisService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -78,6 +79,11 @@ public class LotteryAnalysisServiceImpl implements LotteryAnalysisService {
                         .param("valueFormat", valueFormat(request.getCode()))
                         .param("allowed", com.alibaba.fastjson2.JSON.toJSONString(request.getAllowedValues()))
                         .param("draws", com.alibaba.fastjson2.JSON.toJSONString(draws))
+                        .param("sequenceEvidence", PatternSequenceEvidence.describe(request))
+                        .param("summaryRule", PatternSequenceEvidence.requiresExactSummary(request)
+                            ? "蓝球类别的形态描述必须逐字使用程序核实的走势事实；理由只写未来延续或切换假设，"
+                                + "不重新叙述历史次数、期号或序列，不使用最近、过去、此前、历史或几期等历史叙述。"
+                            : "形态描述以已核实走势事实为依据，可补充30期背景。")
                         .param("featureValues", com.alibaba.fastjson2.JSON.toJSONString(
                             request.getObservations().stream().map(o -> o.getValue()).toList()))
                         .param("correction", feedback))

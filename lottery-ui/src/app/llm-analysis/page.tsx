@@ -151,15 +151,15 @@ export default function LlmAnalysisPage() {
                 </div>
               </div>
             </div>
-            <button
-              type="button"
-              className="primary-btn"
-              onClick={() => void load(sampleSize)}
-              disabled={busy}
-              aria-busy={loading}
-            >
-              重新分析
-            </button>
+            {/*<button*/}
+            {/*  type="button"*/}
+            {/*  className="primary-btn"*/}
+            {/*  onClick={() => void load(sampleSize)}*/}
+            {/*  disabled={busy}*/}
+            {/*  aria-busy={loading}*/}
+            {/*>*/}
+            {/*  重新分析*/}
+            {/*</button>*/}
           </div>
           <p className="info-bar">
             特征预测：基于历史开奖统计与形态推算生成特征报告，结果写入后台 JSON，可从最近分析回看。

@@ -12,6 +12,9 @@ public final class LotteryAdjustPrompt {
         先从recentDrawRecords独立分析历史开奖趋势，再读patternSummary、nextPeriodInference、
         likelyValues、unlikelyValues及理由进行交叉核对，按趋势形成下一期选号假设。
         status不为OK的项不可作为预测依据。source=java代表本地指数适配，不能称为大模型规律。
+        source=derived-zone-counts的三区比由三个区的候选个数交叉组合并保留合计6的结果，不是独立模型预测。
+        三区比与各区个数是同一结构的不同视图，不重复加权，也不再独立推演另一套三区候选。
+        某区为0只表示该区原有候选支持不开红球，不能因组合失败自动补0；三区比不可用时不补造组合。
         每项likelyValues是软偏好，unlikelyValues是防守降权池；池外不是禁选，空池表示无明确倾向。
         不要将全部特征锁死，不要对未知项补造结论；仅观察现象，不计算或输出概率、命中率或置信度。
         暂不优先的合法取值不是一定不会出现，不能作为硬性排除。

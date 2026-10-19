@@ -19,6 +19,10 @@ public final class LotteryPatternAnalysisPrompt {
         【定义】{definition}
         【本特征输出规则】{valueFormat}
         【候选取值】{allowed}
+        【程序核实的走势事实】{sequenceEvidence}
+        {summaryRule}
+        当前交替与此前连出必须区分：末段交替时，先讨论切换延续，再讨论交替被打断的备选假设。
+        不得仅因最新一期为大就直接推断大继续连出；也不能把交替当成下期必然转小。
         【30期开奖，position=1最旧，position=30最新】
         {draws}
         value是程序按定义计算的确定性事实，逐期特征必须按position=1到30原样引用每行value。
@@ -40,7 +44,7 @@ public final class LotteryPatternAnalysisPrompt {
         逐期特征和两个候选池的JSON数组均须写在对应标签的同一行，不换行；理由各占一行。
         一、形态规律总结
         逐期特征：{featureValues}
-        形态描述：引用最近的实际序列，说明停留、试探、回落、跳变或切换，以及30期背景。
+        形态描述：{sequenceEvidence}
         二、下期{label}推演
         倾向出现的{label}池：[]
         理由：说明每个候选对应的序列现象，不能只说看好或惯性。
