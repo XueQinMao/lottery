@@ -1,110 +1,145 @@
 package com.my.project.python.pool;
 
 import com.alibaba.fastjson.JSONObject;
-import com.my.project.python.support.PythonUtils;
 import com.my.project.python.support.ResourcePathUtils;
-import org.apache.commons.lang3.tuple.Triple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.util.Assert;
-
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.IOException;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.ArrayDeque;
+import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Supplier;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-/**
- * PythonConnection
- *
- * @author 刘强
- * @version 2025/10/28 19:31
- **/
-public class PythonConnection {
-
-    private static final Logger logger = LoggerFactory.getLogger(PythonConnection.class);
-
+/** 一次借用一个请求；超时终止实际进程，迟到响应不能进入后续请求。 */
+public class PythonConnection implements AutoCloseable {
+    private static final Logger log = LoggerFactory.getLogger(PythonConnection.class);
     private final Process process;
-    private final BufferedWriter requestWriter;
-    private final BufferedReader responseReader;
+    private final BufferedWriter writer;
+    private final BufferedReader reader;
+    private final Duration requestTimeout;
+    private final AtomicBoolean closed = new AtomicBoolean();
+    private final ArrayDeque<String> stderrTail = new ArrayDeque<>();
+    private final ExecutorService io;
 
     public PythonConnection(String scriptName, String modelDir) throws IOException {
-        Instant start = Instant.now();
-        Triple<Process, BufferedWriter, BufferedReader> pythonObject = PythonUtils.startPythonProcess(buildCommand(scriptName, modelDir));
-        process = pythonObject.getLeft();
-        requestWriter = pythonObject.getMiddle();
-        responseReader = pythonObject.getRight();
+        this(start(scriptName, modelDir), Duration.ofMillis(Long.getLong("lottery.python.init-timeout-ms", 300_000L)),
+                Duration.ofMillis(Long.getLong("lottery.python.request-timeout-ms", 120_000L)));
+    }
 
-        Supplier<Void> checkProcess = () -> {
-            try {
-                // 1. 验证Python进程是否正常
-                requestWriter.write(JSONObject.toJSONString(Map.of("type", "init_check")));
-                requestWriter.newLine();
-                requestWriter.flush();
-                String checkResp = responseReader.readLine();
-                JSONObject check = JSONObject.parseObject(checkResp);
-                Assert.isTrue("initialized".equals(check.getString("status")), "Python进程初始化检查异常失败" + checkResp);
-            } catch (Exception e) {
-                throw new RuntimeException("Python进程初始化检查异常", e);
-            }
-            return null;
-        };
-        initializePythonProcess(checkProcess);
-        logger.info("✓ Python初始化耗时{}s", ChronoUnit.SECONDS.between(start, Instant.now()));
+    PythonConnection(Process process, Duration initTimeout, Duration requestTimeout) throws IOException {
+        this.process = process;
+        this.requestTimeout = requestTimeout;
+        writer = new BufferedWriter(new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8));
+        reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
+        io = Executors.newSingleThreadExecutor(Thread.ofPlatform().daemon().name("python-io-" + process.pid()).factory());
+        Thread.ofPlatform().daemon().name("python-stderr-" + process.pid()).start(this::consumeStderr);
+        process.onExit().thenAccept(p -> {
+            if (closed.get()) log.info("Python进程退出 pid={} exit={} stderr={}", p.pid(), p.exitValue(), stderr());
+            else log.error("Python进程异常退出 pid={} exit={} stderr={}", p.pid(), p.exitValue(), stderr());
+        });
+        try {
+            timed(() -> {
+                JSONObject init = parse(reader.readLine());
+                if (!"init_complete".equals(init.getString("type"))) throw new IOException("Python初始化失败: " + init);
+                JSONObject check = parse(exchange(Map.of("type", "init_check")));
+                if (!"initialized".equals(check.getString("status"))) throw new IOException("Python初始化检查失败: " + check);
+                return null;
+            }, initTimeout);
+            log.info("Python连接就绪 pid={}", process.pid());
+        } catch (IOException e) { close(); throw e; }
+    }
+
+    private static Process start(String scriptName, String modelDir) throws IOException {
+        // 直接管理Python而非cmd/bash包装进程，保证超时回收的是实际工作进程。
+        ProcessBuilder builder = new ProcessBuilder(List.of("python", "-u",
+                ResourcePathUtils.getPythonScriptPath(scriptName), "--model-dir", modelDir.trim()));
+        builder.environment().put("PYTHONIOENCODING", "utf-8");
+        builder.environment().put("PYTHONUNBUFFERED", "1");
+        builder.environment().put("PYTHONFAULTHANDLER", "1");
+        builder.environment().put("TF_CPP_MIN_LOG_LEVEL", "3");
+        return builder.start();
     }
 
     public synchronized String execute(Map<String, Object> request) throws IOException {
-        String requestJson = JSONObject.toJSONString(request);
-        requestWriter.write(requestJson + "\n");
-        requestWriter.flush();
-
-        String responseLine = responseReader.readLine();
-        if (responseLine == null) {
-            throw new IOException("Python服务连接已断开");
-        }
-        return responseLine;
-    }
-
-    public void close() {
+        if (!isHealthy()) throw new IOException("Python连接不可用 pid=" + process.pid() + " stderr=" + stderr());
         try {
-            requestWriter.close();
-            responseReader.close();
-        } catch (IOException ignored) {}
+            return timed(() -> {
+                String line = exchange(request);
+                JSONObject response = parse(line);
+                if (response.containsKey("error") || "error".equals(response.getString("status")))
+                    throw new IOException("Python预测返回错误: " + response);
+                return line;
+            }, requestTimeout);
+        } catch (IOException e) { close(); throw e; }
+    }
 
-        if (process != null && process.isAlive()) {
-            process.destroy(); // 先尝试软终止
-            try {
-                if (!process.waitFor(2, TimeUnit.SECONDS)) {
-                    process.destroyForcibly(); // 强制杀掉
+    private String exchange(Map<String, Object> request) throws IOException {
+        writer.write(JSONObject.toJSONString(request));
+        writer.newLine();
+        writer.flush();
+        return reader.readLine();
+    }
+
+    private static JSONObject parse(String line) throws IOException {
+        if (line == null) throw new IOException("Python服务连接已断开（EOF）");
+        try {
+            JSONObject result = JSONObject.parseObject(line);
+            if (result == null) throw new IOException("Python返回空响应");
+            return result;
+        } catch (RuntimeException e) {
+            throw new IOException("Python响应不是有效JSON对象: " + line.substring(0, Math.min(512, line.length())), e);
+        }
+    }
+
+    private <T> T timed(Callable<T> task, Duration timeout) throws IOException {
+        Future<T> future;
+        try { future = io.submit(task); }
+        catch (RejectedExecutionException e) { throw new IOException("Python连接已关闭", e); }
+        try { return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS); }
+        catch (InterruptedException e) {
+            future.cancel(true); close(); Thread.currentThread().interrupt();
+            throw new IOException("Python通信被中断", e);
+        } catch (TimeoutException e) {
+            future.cancel(true); close();
+            throw new IOException("Python通信超时 pid=" + process.pid() + " timeout=" + timeout + " stderr=" + stderr(), e);
+        } catch (ExecutionException e) {
+            throw new IOException("Python通信失败 pid=" + process.pid() + " stderr=" + stderr(), e.getCause());
+        }
+    }
+
+    public boolean isHealthy() { return !closed.get() && process.isAlive(); }
+
+    private String stderr() {
+        synchronized (stderrTail) { return String.join(" | ", stderrTail); }
+    }
+
+    private void consumeStderr() {
+        try (BufferedReader errors = new BufferedReader(new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = errors.readLine()) != null) {
+                synchronized (stderrTail) {
+                    if (stderrTail.size() == 30) stderrTail.removeFirst();
+                    stderrTail.addLast(line.substring(0, Math.min(2048, line.length())));
                 }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+                if (line.startsWith("[资源]")) log.info("Python pid={} {}", process.pid(), line);
+                else log.debug("Python pid={} stderr: {}", process.pid(), line);
             }
-        }
+        } catch (IOException e) { log.debug("Python stderr结束 pid={}: {}", process.pid(), e.getMessage()); }
     }
 
-    private String buildCommand(String scriptName, String modelDir) {
-        StringBuilder command = new StringBuilder();
-        command.append("python ").append(ResourcePathUtils.getPythonScriptPath(scriptName));
-
-        // 如果指定了模型目录，添加 --model-dir 参数
-        command.append(" --model-dir \"").append(modelDir.trim()).append("\"");
-        return command.toString();
-    }
-
-    private void initializePythonProcess(Supplier<Void> checkProcess) throws IOException {
-        // 等待初始化完成信号
-        String initSignal = responseReader.readLine(); // 30秒超时
-        Assert.hasText(initSignal, "python 初始化失败，疑似超时");
-
-        JSONObject signal = JSONObject.parseObject(initSignal);
-        if (!"init_complete".equals(signal.getString("type"))) {
-            throw new IOException("Python进程初始化失败: " + initSignal);
-        }
-        logger.info("✓ Python初始化完成，加载{}个模型", signal.getInteger("models_loaded"));
-        checkProcess.get();
+    @Override public void close() {
+        if (!closed.compareAndSet(false, true)) return;
+        // 不先关闭持有readLine锁的BufferedReader；先杀进程解除读写阻塞。
+        process.descendants().forEach(ProcessHandle::destroyForcibly);
+        process.destroyForcibly();
+        io.shutdownNow();
+        try { process.waitFor(2, TimeUnit.SECONDS); }
+        catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        try { process.getOutputStream().close(); } catch (IOException ignored) { }
+        try { process.getInputStream().close(); } catch (IOException ignored) { }
+        try { process.getErrorStream().close(); } catch (IOException ignored) { }
     }
 }

@@ -11,7 +11,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.util.Map;
-import java.util.Objects;
+import jakarta.annotation.PreDestroy;
 
 /**
  * InitPythonProcessServiceImpl
@@ -27,7 +27,7 @@ public class InitPythonProcessServiceImpl implements InitPythonProcessService {
 
     private static final String SCRIPT_NAME = "predict.py";
 
-    private PythonConnectionPool connectionPool;
+    private volatile PythonConnectionPool connectionPool;
 
     private final LotteryModelProperties modelProperties;
 
@@ -36,28 +36,47 @@ public class InitPythonProcessServiceImpl implements InitPythonProcessService {
     }
 
     @Override
-    public void init() throws IOException {
-        connectionPool = new PythonConnectionPool(2, SCRIPT_NAME, modelProperties.getPath()+"/model");
+    public synchronized void init() throws IOException {
+        // 每次初始化仍重新加载最新模型/历史；不能用幂等跳过使跨期预测继续使用旧历史。
+        PythonConnectionPool replacement = createPool();
+        PythonConnectionPool previous = connectionPool;
+        connectionPool = replacement;
+        if (previous != null) previous.shutdown();
+    }
+
+    PythonConnectionPool createPool() throws IOException {
+        return new PythonConnectionPool(2, SCRIPT_NAME, modelProperties.getPath() + "/model");
     }
 
     @Override
     public String runInference(Map<String, Object> request) {
-        PythonConnection connection = null;
-        try {
-            connection = connectionPool.borrowConnection();
-            return connection.execute(request);
-        } catch (Exception e) {
-            logger.error("执行Python预测失败: {}", e.getMessage(), e);
-        } finally {
-            if (Objects.nonNull(connection)) {
-                connectionPool.returnConnection(connection);
+        PythonConnectionPool pool = connectionPool;
+        if (pool == null) throw new IllegalStateException("Python连接池尚未初始化或已关闭");
+        IOException last = null;
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            PythonConnection connection = null;
+            try {
+                connection = pool.borrowConnection();
+                return connection.execute(request);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("等待Python连接被中断", e);
+            } catch (IOException e) {
+                last = e;
+                if (Thread.currentThread().isInterrupted()) throw new IllegalStateException("Python预测被中断", e);
+                logger.warn("Python预测第{}次失败: {}", attempt, e.getMessage(), e);
+            } finally {
+                if (connection != null) pool.returnConnection(connection);
             }
         }
-        return null;
+        throw new IllegalStateException("Python预测失败，已用同一输入尝试2次", last);
     }
 
     @Override
-    public void shutdown() {
-        connectionPool.shutdown();
+    @PreDestroy
+    public synchronized void shutdown() {
+        PythonConnectionPool pool = connectionPool;
+        connectionPool = null;
+        if (pool != null) pool.shutdown();
     }
 }
