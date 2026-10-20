@@ -1,0 +1,25 @@
+{
+  "cases": 64,
+  "absolute_tolerance": 1e-12,
+  "max_differences": {
+    "markov_model": 0,
+    "xgb_is_positive": 0,
+    "transformer_model": 0,
+    "voting_model": 5.551115123125783e-17,
+    "rf_is_positive": 1.1102230246251565e-16,
+    "stacking_model": 5.551115123125783e-17,
+    "lstm_model": 0,
+    "fusion": 2.0816681711721685e-17
+  },
+  "baseline_repeat_differences": {
+    "markov_model": 0,
+    "xgb_is_positive": 0,
+    "transformer_model": 0,
+    "voting_model": 2.7755575615628914e-17,
+    "rf_is_positive": 1.1102230246251565e-16,
+    "stacking_model": 5.551115123125783e-17,
+    "lstm_model": 0,
+    "fusion": 2.0816681711721685e-17
+  },
+  "reason_equal": true
+}

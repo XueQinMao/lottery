@@ -74,6 +74,7 @@ public class PredictCacheServiceImpl implements PredictCacheService {
         if (CollectionUtils.isNotEmpty(keys)) {
             keys.forEach(key -> {
                 byte[] bytes = PredictionCandidateCache.getInstance().get(key);
+                if (bytes == null) return; // 并发淘汰/删除的旧索引不能当成有效候选解压。
                 byte[] serialized = Lz4Utils.decompressWithLength(bytes);
                 ModelPredictOutputBo deserialize = KryoSerializerUtils.deserialize(serialized, ModelPredictOutputBo.class);
                 cacheDatas.put(key, deserialize);
@@ -86,12 +87,13 @@ public class PredictCacheServiceImpl implements PredictCacheService {
             if (size > 0 && cacheDatas.size() > size) {
                 break;
             }
-            Set<String> strings = scoreIndex.get(entry.getKey());
+            Set<String> strings = entry.getValue();
             strings.forEach(key -> {
                 if (size > 0 && cacheDatas.size() >= size) {
                     return;
                 }
                 byte[] bytes = PredictionCandidateCache.getInstance().get(key);
+                if (bytes == null) return;
                 byte[] serialized = Lz4Utils.decompressWithLength(bytes);
                 ModelPredictOutputBo deserialize = KryoSerializerUtils.deserialize(serialized, ModelPredictOutputBo.class);
                 cacheDatas.put(key, deserialize);

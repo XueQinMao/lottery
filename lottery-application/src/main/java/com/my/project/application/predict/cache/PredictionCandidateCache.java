@@ -13,6 +13,8 @@ import org.slf4j.LoggerFactory;
 import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.NavigableMap;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -28,7 +30,9 @@ public class PredictionCandidateCache {
 
     private static final Logger log = LoggerFactory.getLogger(PredictionCandidateCache.class);
 
-    private final Cache<String, byte[]> cache;
+    private record Entry(double score, byte[] bytes) { }
+    private final Cache<String, Entry> cache;
+    private final Map<String, Entry> indexed = new ConcurrentHashMap<>();
 
     // 索引：分数 -> Key集合（ConcurrentSkipListMap 支持排序和范围查询）
     private final ConcurrentSkipListMap<Double, Set<String>> scoreIndex = new ConcurrentSkipListMap<>();
@@ -37,23 +41,49 @@ public class PredictionCandidateCache {
     private static final PredictionCandidateCache INSTANCE = new PredictionCandidateCache();
 
     private PredictionCandidateCache() {
-        this.cache = Caffeine.newBuilder().maximumSize(100_000_000)// 根据内存估算调整
-            .evictionListener((String key, byte[] value, RemovalCause cause) -> {
-                log.warn("Cache evicted: key={}, cause={}", key, cause);
+        this(100_000_000);
+    }
+
+    PredictionCandidateCache(long maximumSize) {
+        this.cache = Caffeine.newBuilder().maximumSize(maximumSize)
+            .removalListener((String key, Entry value, RemovalCause cause) -> {
+                removeIndexIfCurrent(key, value);
             }).recordStats()                        // 开启统计
             .build();
-        log.info("Cache initialized: maxSize=10m");
+        log.info("Cache initialized: maxSize={}", maximumSize);
     }
 
     public static PredictionCandidateCache getInstance() {
         return INSTANCE;
     }
 
-    public void put(String key, double score, byte[] compressedData) {
-        cache.put(key, compressedData);
-        // 更新索引
+    public synchronized void put(String key, double score, byte[] compressedData) {
+        Objects.requireNonNull(key);
+        Objects.requireNonNull(compressedData);
+        Entry previous = indexed.get(key);
+        if (previous != null) removeIndexIfCurrent(key, previous);
+        Entry current = new Entry(score, compressedData);
+        indexed.put(key, current);
         scoreIndex.computeIfAbsent(score, k -> ConcurrentHashMap.newKeySet()).add(key);
+        cache.put(key, current);
         log.debug("Cache put: key={}, size={} bytes", key, compressedData.length);
+    }
+
+    private synchronized void removeIndexIfCurrent(String key, Entry expected) {
+        // 异步淘汰/替换通知可能迟到；只能删除它对应的旧版本，不能删除新号码记录。
+        if (indexed.get(key) != expected) return;
+        indexed.remove(key);
+        Set<String> keys = scoreIndex.get(expected.score());
+        if (keys != null) {
+            keys.remove(key);
+            if (keys.isEmpty()) scoreIndex.remove(expected.score(), keys);
+        }
+    }
+
+    public synchronized void invalidate(String key) {
+        Entry previous = indexed.get(key);
+        if (previous != null) removeIndexIfCurrent(key, previous);
+        cache.invalidate(key);
     }
 
     /**
@@ -80,7 +110,7 @@ public class PredictionCandidateCache {
      * 从缓存中获取压缩数据并解压
      */
     public PredictRecord getAndDeserialize(String key) {
-        byte[] compressed = cache.getIfPresent(key);
+        byte[] compressed = get(key);
         if (compressed == null) return null;
         try {
             String[] split = key.split(Pattern.quote("|"));
@@ -101,8 +131,10 @@ public class PredictionCandidateCache {
     /**
      * 清除所有的key
      */
-    public void clear() {
+    public synchronized void clear() {
         cache.invalidateAll();
+        indexed.clear();
+        scoreIndex.clear();
     }
 
     public String getStats() {
@@ -115,6 +147,7 @@ public class PredictionCandidateCache {
     }
 
     public byte[] get(String key) {
-        return cache.getIfPresent(key);
+        Entry entry = cache.getIfPresent(key);
+        return entry == null ? null : entry.bytes();
     }
 }

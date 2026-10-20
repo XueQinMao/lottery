@@ -1,0 +1,48 @@
+{
+  "status": "stopped_at_user_request_before_60_minutes",
+  "fixed_last_completed_progress": {
+    "progress": 27388,
+    "elapsed": 2161.469000000041,
+    "pid": 539144
+  },
+  "java_tests": 39,
+  "python_tests": 2,
+  "fixed_input_cases": 64,
+  "persistence_decisions": 320,
+  "source_models_history_hashes_unchanged": true,
+  "resource_samples": 36,
+  "after_5_minutes": {
+    "private_bytes": {
+      "min": 1654194176,
+      "max": 1677721600,
+      "mean": 1665511424.0
+    },
+    "handles": {
+      "min": 992,
+      "max": 1664,
+      "mean": 1287.225806451613
+    },
+    "threads": {
+      "min": 299,
+      "max": 372,
+      "mean": 330.7096774193548
+    }
+  },
+  "last_10_minutes": {
+    "private_bytes": {
+      "min": 1670189056,
+      "max": 1677721600,
+      "mean": 1673460940.8
+    },
+    "handles": {
+      "min": 1085,
+      "max": 1664,
+      "mean": 1315.8
+    },
+    "threads": {
+      "min": 302,
+      "max": 372,
+      "mean": 329.2
+    }
+  }
+}

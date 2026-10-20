@@ -1,0 +1,14 @@
+﻿{
+    "reason":  "User requested ending further long-running validation",
+    "time":  "2026-10-20T11:40:48.8047349+08:00",
+    "pid":  539144,
+    "handles":  1312,
+    "threads":  335,
+    "private_bytes":  1676996608,
+    "working_set":  609665024,
+    "progress":  {
+                     "progress":  27388,
+                     "elapsed":  2161.469000000041,
+                     "pid":  539144
+                 }
+}

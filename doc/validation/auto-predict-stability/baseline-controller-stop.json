@@ -1,0 +1,14 @@
+﻿{
+    "reason":  "Stopped by test controller to avoid host resource exhaustion",
+    "time":  "2026-10-20T11:39:03.2721592+08:00",
+    "pid":  411544,
+    "handles":  107391,
+    "threads":  53402,
+    "private_bytes":  9971691520,
+    "working_set":  7662587904,
+    "progress":  {
+                     "progress":  3427,
+                     "elapsed":  480.51599999994505,
+                     "pid":  411544
+                 }
+}
