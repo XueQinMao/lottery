@@ -28,6 +28,7 @@ import argparse
 import random
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed  # 新增：并行执行
+from prediction_diagnostics import start_diagnostics
 
 warnings.filterwarnings('ignore')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -106,6 +107,9 @@ SEQ_CTX = list(reversed(_last_n))
 
 # ============================== 模型加载 ==============================
 loaded_models = {}
+# 模型与执行线程同生命周期；TensorFlow加载和推理始终在同一个线程。
+LSTM_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix='lstm-inference')
+MODEL_EXECUTOR = ThreadPoolExecutor(max_workers=7, thread_name_prefix='model-inference')
 
 
 def _load_pickle(name):
@@ -237,7 +241,7 @@ def load_all_models():
     log("开始加载所有模型...")
     log("=" * 60)
     load_traditional_ml_models()
-    load_lstm_model()
+    LSTM_EXECUTOR.submit(load_lstm_model).result()
     load_transformer_model()
     load_markov_model()
     load_fusion_models()
@@ -279,6 +283,12 @@ def _primary_fallback_keys():
 
 
 def model_proba(model_key, feat_vec, seq_vec, state_id):
+    if model_key == 'lstm_model':
+        return LSTM_EXECUTOR.submit(_model_proba, model_key, feat_vec, seq_vec, state_id).result()
+    return _model_proba(model_key, feat_vec, seq_vec, state_id)
+
+
+def _model_proba(model_key, feat_vec, seq_vec, state_id):
     """获取单个模型对主目标的正类概率；失败返回 None。"""
     # 别名：融合元特征名 rf/xgb → 实际主模型键
     if model_key in ('rf', 'xgb'):
@@ -356,21 +366,19 @@ def fuse_prediction(feat_vec, seq_vec, state_id):
         return DEFAULT_META_PROBA, "No_model_available"
 
     prob_dict = {}
-    workers = max(1, len(meta_names))
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {}
-        for name in meta_names:
-            key = name_to_key.get(name, name)
-            futures[executor.submit(model_proba, key, feat_vec, seq_vec, state_id)] = name
+    futures = {}
+    for name in meta_names:
+        key = name_to_key.get(name, name)
+        futures[MODEL_EXECUTOR.submit(model_proba, key, feat_vec, seq_vec, state_id)] = name
 
-        for future in as_completed(futures):
-            name = futures[future]
-            try:
-                p = future.result()
-            except Exception as e:
-                log(f"[并行预测异常] {name}: {e}")
-                p = None
-            prob_dict[name] = p
+    for future in as_completed(futures):
+        name = futures[future]
+        try:
+            p = future.result()
+        except Exception as e:
+            log(f"[并行预测异常] {name}: {e}")
+            p = None
+        prob_dict[name] = p
 
     # 定长：与训练时 meta_feature_names 一一对应，缺失用默认概率
     meta_probas = []
@@ -595,4 +603,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    stop_diagnostics = start_diagnostics(log)
+    try:
+        main()
+    finally:
+        MODEL_EXECUTOR.shutdown(wait=True)
+        LSTM_EXECUTOR.shutdown(wait=True)
+        stop_diagnostics()

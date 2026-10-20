@@ -155,23 +155,34 @@ public class ResourcePathUtils {
 
             // 创建临时目录
             Path tempDir = Files.createTempDirectory("lottery-python-");
+            tempDir.toFile().deleteOnExit();
             File tempFile = new File(tempDir.toFile(), scriptName);
+            tempFile.deleteOnExit();
 
             // 提取文件到临时目录
-            try (FileOutputStream outputStream = new FileOutputStream(tempFile)) {
+            try (InputStream source = inputStream;
+                 FileOutputStream outputStream = new FileOutputStream(tempFile)) {
                 byte[] buffer = new byte[8192];
                 int bytesRead;
-                while ((bytesRead = inputStream.read(buffer)) != -1) {
+                while ((bytesRead = source.read(buffer)) != -1) {
                     outputStream.write(buffer, 0, bytesRead);
+                }
+            }
+
+            if ("predict.py".equals(scriptName)) {
+                for (String dependency : new String[]{"ssq_features.py", "prediction_diagnostics.py"}) {
+                    try (InputStream companion = ResourcePathUtils.class.getClassLoader()
+                            .getResourceAsStream("python/" + dependency)) {
+                        if (companion == null) throw new IllegalStateException("缺少预测依赖: " + dependency);
+                        Path companionPath = tempDir.resolve(dependency);
+                        Files.copy(companion, companionPath);
+                        companionPath.toFile().deleteOnExit();
+                    }
                 }
             }
 
             logger.info("已从JAR提取文件: {} -> {}", scriptName, tempFile.getAbsolutePath());
             
-            // 设置JVM退出时删除临时文件
-            tempFile.deleteOnExit();
-            tempDir.toFile().deleteOnExit();
-
             return tempFile.getAbsolutePath();
 
         } catch (Exception e) {
@@ -187,13 +198,17 @@ public class ResourcePathUtils {
         try {
             // 创建临时目录
             Path tempDir = Files.createTempDirectory("lottery-python-");
+            tempDir.toFile().deleteOnExit();
             File pythonDir = new File(tempDir.toFile(), "python");
             pythonDir.mkdirs();
+            pythonDir.deleteOnExit();
 
             // 获取python目录下的所有资源
             String[] pythonFiles = {
                 "train_models.py",
                 "predict.py",
+                "ssq_features.py",
+                "prediction_diagnostics.py",
                 "requirements.txt",
                 "train_models_usage.md",
                 "ModelTrainingUtils.java.example"
@@ -209,10 +224,11 @@ public class ResourcePathUtils {
                 if (inputStream != null) {
                     File targetFile = new File(pythonDir, fileName);
                     
-                    try (FileOutputStream outputStream = new FileOutputStream(targetFile)) {
+                    try (InputStream source = inputStream;
+                         FileOutputStream outputStream = new FileOutputStream(targetFile)) {
                         byte[] buffer = new byte[8192];
                         int bytesRead;
-                        while ((bytesRead = inputStream.read(buffer)) != -1) {
+                        while ((bytesRead = source.read(buffer)) != -1) {
                             outputStream.write(buffer, 0, bytesRead);
                         }
                     }
@@ -224,8 +240,6 @@ public class ResourcePathUtils {
             }
 
             if (extractedAtLeastOne) {
-                pythonDir.deleteOnExit();
-                tempDir.toFile().deleteOnExit();
                 return pythonDir.getAbsolutePath();
             }
 
