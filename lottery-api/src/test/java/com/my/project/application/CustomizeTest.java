@@ -3,6 +3,7 @@ package com.my.project.application;
 import com.my.project.infrastructure.persistence.entity.HistoryRecord;
 import com.my.project.infrastructure.persistence.repository.HistoryRecordRepository;
 import com.my.project.application.support.OmissionDueProbabilityUtils;
+import com.my.project.application.support.analyse.RedBallKillUtils;
 import jakarta.annotation.Resource;
 import org.apache.commons.collections4.CollectionUtils;
 import org.junit.jupiter.api.DisplayName;
@@ -36,9 +37,9 @@ public class CustomizeTest {
         // 规则名 -> 函数
         Map<String, Function<String, List<Integer>>> rules = new LinkedHashMap<>();
         rules.put("上期蓝球杀红", this::lastWinBlue);
-        rules.put("6期出现3次", this::moreThan3);
-        rules.put("和值尾数", this::sumTotalMantissa);
-        rules.put("和值尾数+1", this::sumTotalMantissaAddOne);
+        rules.put("近6期至少出现4次", this::atLeastFourHitsInSixDraws);
+        rules.put("和值余100（大于33减一次33）", this::sumModulo100Subtract33Once);
+        rules.put("和值余100加1（大于33减一次33）", this::sumModulo100PlusOneSubtract33Once);
         rules.put("上期蓝球+3杀红", this::lastWinBlueAdd3);
         rules.put("上期红球第一位+5", this::lastWinRedOneAdd5);
         rules.put("上期红球最后一位-5", this::lastWinRedLastDel5);
@@ -53,7 +54,7 @@ public class CustomizeTest {
         rules.put("上期最大-最小", this::maxMinSub);
         rules.put("第5位+第2位", this::fiveAddTow);
         rules.put("第1位+第6位", this::oneAddSix);
-        rules.put("奇偶数首位相加除2", this::oddEvenDiv2);
+        rules.put("奇偶各组首尾均值（奇除2、偶除3）", this::parityEndpointsOddHalfEvenThird);
         rules.put("连续3期出现", this::continuous3);
         rules.put("遗漏35期", this::moreThanOmission35);
         rules.put("3连号中间", this::threeConsecutiveNumbersMiddle);
@@ -160,126 +161,31 @@ public class CustomizeTest {
     @Test
     @DisplayName("测试下一期开出的号码是都包含在前20期中")
     public void test_20_zh() {
-        // 这里也改成升序，保证下一期是时间上更晚的一期
-        List<HistoryRecord> windows =
-            historyRecordRepository.lambdaQuery().orderByDesc(HistoryRecord::getOpenDate).last(" limit 30").list();
-        for (int i = 0; i < windows.size() - 1; i++) {
-            HistoryRecord w = windows.get(i);
-            List<Integer> nextWins =
-                List.of(w.getNum1(), w.getNum2(), w.getNum3(),
-                    w.getNum4(), w.getNum5(), w.getNum6());
-
-            List<Integer> list = continuous3(w.getPeriod());
-            if (CollectionUtils.isNotEmpty(list)) {
-                System.out.println(
-                    "连续开出3次：" + list + " 错杀：" + CollectionUtils.intersection(list, nextWins).size());
-            }
-            List<Integer> integers = lastWinBlue(w.getPeriod());
-            System.out.println(
-                "上期篮球杀红：" + integers + " 错杀：" + CollectionUtils.intersection(integers, nextWins).size());
-
-            List<Integer> integers1 = moreThan3(w.getPeriod());
-            System.out.println(
-                "6期出现3次：" + integers1 + " 错杀：" + CollectionUtils.intersection(integers1, nextWins).size());
-
-            List<Integer> integers2 = threeConsecutiveNumbersMiddle(w.getPeriod());
-            if (CollectionUtils.isNotEmpty(integers2)) {
-                System.out.println(
-                    "3连号中间：" + integers2 + " 错杀：" + CollectionUtils.intersection(integers2, nextWins).size());
-            }
-
-            List<Integer> integers3 = moreThanOmission35(w.getPeriod());
-            if (CollectionUtils.isNotEmpty(integers3)) {
-                System.out.println(
-                    "遗漏35期：" + integers3 + " 错杀：" + CollectionUtils.intersection(integers3, nextWins).size());
-            }
-
-            List<Integer> integers4 = sumTotalMantissa(w.getPeriod());
-            System.out.println(
-                "和值尾数：" + integers4 + " 错杀：" + CollectionUtils.intersection(integers4, nextWins).size());
-
-            List<Integer> integers5 = sumTotalMantissaAddOne(w.getPeriod());
-            if (CollectionUtils.isNotEmpty(integers5)) {
-                System.out.println(
-                    "和值尾数+1：" + integers5 + " 错杀：" + CollectionUtils.intersection(integers5, nextWins).size());
-            }
-            List<Integer> integers6 = lastWinBlueAdd3(w.getPeriod());
-            System.out.println(
-                "上期篮球+3杀红：" + integers6 + " 错杀：" + CollectionUtils.intersection(integers6, nextWins).size());
-
-            List<Integer> integers7 = lastWinRedOneAdd5(w.getPeriod());
-            System.out.println(
-                "上期红球第一位+5：" + integers7 + " 错杀：" + CollectionUtils.intersection(integers7, nextWins).size());
-
-            List<Integer> integers8 = lastWinRedLastDel5(w.getPeriod());
-            System.out.println(
-                "上期红球最后一位-5：" + integers8 + " 错杀：" + CollectionUtils.intersection(integers8, nextWins)
-                    .size());
-
-            List<Integer> integers9 = diffRemainder(w.getPeriod());
-            System.out.println(
-                "相邻的差值的尾数：" + integers9 + " 错杀：" + CollectionUtils.intersection(integers9, nextWins).size());
-
-            List<Integer> integers10 = oddEvenDiff(w.getPeriod());
-            System.out.println(
-                "奇偶球个数的差值绝对值：" + integers10 + " 错杀：" + CollectionUtils.intersection(integers10, nextWins)
-                    .size());
-
-            List<Integer> integers11 = oneSixAdd(w.getPeriod());
-            System.out.println(
-                "第一位+第六位的和值尾数：" + integers11 + " 错杀：" + CollectionUtils.intersection(integers11, nextWins)
-                    .size());
-
-            List<Integer> integers12 = omissionMaxSub3(w.getPeriod());
-            System.out.println(
-                "遗漏最大的球-3：" + integers12 + " 错杀：" + CollectionUtils.intersection(integers12, nextWins).size());
-
-            List<Integer> integers13 = maxAddMinDiv2(w.getPeriod());
-            System.out.println(
-                "最大+最小除2：" + integers13 + " 错杀：" + CollectionUtils.intersection(integers13, nextWins).size());
-
-            List<Integer> integers14 = fiveSubTow(w.getPeriod());
-            System.out.println(
-                "第5位-第2位：" + integers14 + " 错杀：" + CollectionUtils.intersection(integers14, nextWins).size());
-
-            List<Integer> integers15 = currentOpenDateDiv10Add10(w.getPeriod());
-            System.out.println(
-                "开奖日取余数+10：" + integers15 + " 错杀：" + CollectionUtils.intersection(integers15, nextWins).size());
-
-            List<Integer> integers16 = maxMinSub(w.getPeriod());
-            System.out.println(
-                "上一期最大-最小：" + integers16 + " 错杀：" + CollectionUtils.intersection(integers16, nextWins).size());
-
-            List<Integer> integers17 = fiveAddTow(w.getPeriod());
-            System.out.println(
-                "第5位+第2位：" + integers17 + " 错杀：" + CollectionUtils.intersection(integers17, nextWins).size());
-
-            List<Integer> integers18 = oneAddSix(w.getPeriod());
-            System.out.println(
-                "第1位+第6位：" + integers18 + " 错杀：" + CollectionUtils.intersection(integers18, nextWins).size());
-
-            List<Integer> integers19 = oddEvenDiv2(w.getPeriod());
-            System.out.println(
-                "奇偶数首位相加除2：" + integers19 + " 错杀：" + CollectionUtils.intersection(integers19, nextWins)
-                    .size());
-
-            List<Integer> list1 =
-                Stream.of(integers,integers1, integers2, integers3, integers4, integers5, integers6, integers7,
-                        integers8,integers9, integers10, integers11, integers12, integers13, integers14, integers15,
-                        integers16, integers17, integers18, integers19).filter(CollectionUtils::isNotEmpty)
-                    .flatMap(List::stream).distinct().toList();
-
-            System.out.println(w.getPeriod()+"*************************************总杀球：" + list1.size() + " 错杀：" + CollectionUtils.intersection(list1, nextWins));
+        var targets = historyRecordRepository.lambdaQuery().orderByDesc(HistoryRecord::getOpenDate)
+            .last(" limit 30").list();
+        for (var target : targets.subList(0, Math.max(0, targets.size() - 1))) {
+            var past = historyRecordRepository.lambdaQuery().lt(HistoryRecord::getPeriod, target.getPeriod())
+                .orderByDesc(HistoryRecord::getPeriod).last(" limit 100").list();
+            if (past.isEmpty()) continue;
+            var actualReds = List.of(target.getNum1(), target.getNum2(), target.getNum3(),
+                target.getNum4(), target.getNum5(), target.getNum6());
+            var rules = RedBallKillUtils.calculateByRule(past, target.getOpenDate());
+            rules.forEach((name, balls) -> System.out.println(name + "：" + balls
+                + " 错杀：" + CollectionUtils.intersection(balls, actualReds)));
+            var killed = RedBallKillUtils.calculate(past, target.getOpenDate()).stream()
+                .map(com.my.project.llm.bo.KillNumberResultBo.KillItemBo::getBall).toList();
+            System.out.println("**********************"+target.getPeriod() + " 总杀号：" + killed.size() + " 错杀："
+                + CollectionUtils.intersection(killed, actualReds));
         }
     }
 
     /**
-     * 奇偶数首位相加除2
+     * 奇偶分组首尾相加：奇数组除2、偶数组除3，均为整数除法。
      *
      * @param period
      * @return
      */
-    private List<Integer> oddEvenDiv2(String period) {
+    private List<Integer> parityEndpointsOddHalfEvenThird(String period) {
         var last = historyRecordRepository.lambdaQuery().lt(HistoryRecord::getPeriod, Integer.parseInt(period))
             .orderByDesc(HistoryRecord::getPeriod).last(" limit 1").one();
         List<Integer> lasWins =
@@ -481,12 +387,12 @@ public class CustomizeTest {
     }
 
     /**
-     * 和值尾数+1
+     * 和值余100加1，大于33时只减一次33。
      *
      * @param period
      * @return
      */
-    private List<Integer> sumTotalMantissaAddOne(String period) {
+    private List<Integer> sumModulo100PlusOneSubtract33Once(String period) {
         var last = historyRecordRepository.lambdaQuery().lt(HistoryRecord::getPeriod, Integer.parseInt(period))
             .orderByDesc(HistoryRecord::getPeriod).last(" limit 1").one();
         List<Integer> lasWins =
@@ -503,12 +409,12 @@ public class CustomizeTest {
     }
 
     /**
-     * 和值尾数
+     * 和值余100，大于33时只减一次33。
      *
      * @param period
      * @return
      */
-    private List<Integer> sumTotalMantissa(String period) {
+    private List<Integer> sumModulo100Subtract33Once(String period) {
         var last = historyRecordRepository.lambdaQuery().lt(HistoryRecord::getPeriod, Integer.parseInt(period))
             .orderByDesc(HistoryRecord::getPeriod).last(" limit 1").one();
         List<Integer> lasWins =
@@ -578,12 +484,12 @@ public class CustomizeTest {
     }
 
     /**
-     * 6期出现3次
+     * 近6期至少出现4次。
      *
      * @param period
      * @return
      */
-    private List<Integer> moreThan3(String period) {
+    private List<Integer> atLeastFourHitsInSixDraws(String period) {
         Map<Integer, Integer> readCountMap = HashMap.newHashMap(16);
         var last6 = historyRecordRepository.lambdaQuery().lt(HistoryRecord::getPeriod, Integer.parseInt(period))
             .orderByDesc(HistoryRecord::getPeriod).last(" limit 6").list();

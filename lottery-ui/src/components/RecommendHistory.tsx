@@ -23,7 +23,10 @@ function formatTime(ts?: number) {
 }
 
 function displayName(fileName: string) {
-  return fileName.replace(/\.json$/i, "");
+  const date = /^adjust_\d{4}(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(?:_|\.json$)/.exec(fileName);
+  if (!date) return fileName.replace(/\.json$/i, "");
+  const [, month, day, hours, minutes, seconds] = date;
+  return `${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
 interface Props {
@@ -53,7 +56,7 @@ export default function RecommendHistory({
   activeFileName,
   title = "最近推荐",
   ariaLabel = "最近推荐",
-  emptyHint = "暂无历史记录。生成后会写入后台目录，可点文件名回看。",
+  emptyHint = "暂无推荐记录。",
   loading = false,
   listError = null,
   disabled = false,
@@ -62,6 +65,14 @@ export default function RecommendHistory({
   onSelect,
   onLoadMore,
 }: Props) {
+  // 缓存文件可能对应多条记录；列表按时间倒序，保留首条以展示最新记录。
+  const seenFileNames = new Set<string>();
+  const uniqueFiles = files.filter((file) => {
+    if (seenFileNames.has(file.fileName)) return false;
+    seenFileNames.add(file.fileName);
+    return true;
+  });
+
   return (
     <aside className="history-panel" aria-label={ariaLabel}>
       <div className="history-head">
@@ -71,9 +82,7 @@ export default function RecommendHistory({
         </h2>
       </div>
       {loading ? (
-        <p className="muted history-empty" role="status">
-          正在加载文件列表...
-        </p>
+        <p className="muted history-empty" role="status">正在加载推荐记录…</p>
       ) : listError ? (
         <p className="status error" role="alert">
           {listError}
@@ -83,10 +92,8 @@ export default function RecommendHistory({
       ) : (
         <>
           <ul className="history-list">
-            {files.map((file) => {
+            {uniqueFiles.map((file) => {
               const selected = file.fileName === activeFileName;
-              // 用 fileName 做 key：雪花 Long 超过 JS Number 安全范围会精度丢失导致 key 冲突，
-              // fileName 带时间戳业务上唯一
               return (
                 <li key={file.fileName}>
                   <button
@@ -97,18 +104,15 @@ export default function RecommendHistory({
                     aria-pressed={selected}
                     aria-current={selected ? "true" : undefined}
                   >
-                    <div className="history-item-meta">
+                    <span className="history-file-name" title={file.fileName}>
                       {file.createTime ? (
                         <time dateTime={new Date(file.createTime).toISOString()}>
                           {formatTime(file.createTime)}
                         </time>
                       ) : (
-                        <span>未知时间</span>
+                        displayName(file.fileName)
                       )}
-                    </div>
-                    <p className="history-file-name" title={file.fileName}>
-                      {displayName(file.fileName)}
-                    </p>
+                    </span>
                     <span className="history-action">
                       <Eye size={14} weight={selected ? "fill" : "regular"} aria-hidden="true" />
                       {selected ? "当前回看" : "回看"}

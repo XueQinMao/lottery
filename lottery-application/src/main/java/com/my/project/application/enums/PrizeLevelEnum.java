@@ -54,6 +54,10 @@ public enum PrizeLevelEnum {
         long redHitCount = userRedBalls.stream().filter(winningRedBalls::contains).count();
         // 蓝球命中
         boolean blueHit = userBlueBalls.contains(winningBlueBall);
+        return checkPrize(redHitCount, blueHit);
+    }
+
+    public static PrizeLevelEnum checkPrize(long redHitCount, boolean blueHit) {
         // 默认升序
         return RULES.stream().filter(r -> r.redCount == redHitCount && r.blueHit == blueHit).map(Rule::prize)
             .min(Comparator.comparing(PrizeLevelEnum::getLevel)).orElse(NO_PRIZE);
@@ -62,7 +66,7 @@ public enum PrizeLevelEnum {
     private static final List<Rule> RULES =
         List.of(new Rule(6, true, FIRST), new Rule(6, false, SECOND), new Rule(5, true, THIRD),
             new Rule(5, false, FOURTH), new Rule(4, true, FOURTH), new Rule(4, false, FIFTH), new Rule(3, true, FIFTH),
-            new Rule(0, true, SIXTH));
+            new Rule(2, true, SIXTH), new Rule(1, true, SIXTH), new Rule(0, true, SIXTH));
 
     record Rule(int redCount, boolean blueHit, PrizeLevelEnum prize) {}
 }

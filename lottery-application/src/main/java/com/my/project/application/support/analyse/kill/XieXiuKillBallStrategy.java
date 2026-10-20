@@ -216,9 +216,9 @@ public class XieXiuKillBallStrategy implements KillBallStrategy {
     }
 
     /**
-     * 最近10期出现3次直接杀掉 遗漏50期以上直接杀掉 同尾杀球
+     * 原有近10期至少3次、遗漏至少50期、同尾规则，加上邻号、近6期至少2次、遗漏至少35期。
      */
-    private List<KillNumberResultBo.KillItemBo> killBlue(List<HistoryRecord> historyRecords) {
+    public List<KillNumberResultBo.KillItemBo> killBlue(List<HistoryRecord> historyRecords) {
         var first = historyRecords.getFirst();
 
         Map<Integer, Integer> blueCountMap = new HashMap<>();
@@ -226,8 +226,10 @@ public class XieXiuKillBallStrategy implements KillBallStrategy {
 
         List<Integer> moreThan3 =
             blueCountMap.entrySet().stream().filter(entry -> entry.getValue() >= 3).map(Map.Entry::getKey).toList();
-        List<Integer> omission50Balls = IntStream.rangeClosed(1, 16).boxed()
+        var omissionStats = IntStream.rangeClosed(1, 16).boxed()
             .map(ball -> Pair.of(ball, OmissionUtils.omissionBallAnalyzer(historyRecords, "blue", ball)))
+            .toList();
+        List<Integer> omission50Balls = omissionStats.stream()
             .filter(p -> p.getRight().getStats().getCurrentOmission() >= 50).map(Pair::getLeft).toList();
         List<Integer> sameTailBalls = IntStream.rangeClosed(1, 16).boxed().map(ball -> Pair.of(ball, ball % 10))
             .filter(p -> p.getRight() == first.getSpecial() % 10).map(Pair::getLeft).toList();
@@ -235,7 +237,19 @@ public class XieXiuKillBallStrategy implements KillBallStrategy {
         List<Integer> allKillBalls =
             Stream.of(moreThan3, omission50Balls, sameTailBalls).filter(CollectionUtils::isNotEmpty)
                 .flatMap(List::stream).toList();
-        return allKillBalls.stream().map(ball -> Pair.of(ball, 1.0)).map(KillBallSupport.boMapper("邪修杀")).toList();
+        List<KillNumberResultBo.KillItemBo> result = new ArrayList<>(allKillBalls.stream()
+            .map(ball -> Pair.of(ball, 1.0)).map(KillBallSupport.boMapper("邪修杀")).toList());
+        // 追加新规则，原有来源优先级由 KillBallUtils 的按号码去重保留。
+        Stream.of(first.getSpecial() - 1, first.getSpecial() + 1)
+            .filter(ball -> ball >= 1 && ball <= 16)
+            .map(ball -> KillBallSupport.kill("上期蓝球邻号±1", ball)).forEach(result::add);
+        Map<Integer, Integer> sixPeriodCounts = new TreeMap<>();
+        historyRecords.stream().limit(6).forEach(h -> sixPeriodCounts.merge(h.getSpecial(), 1, Integer::sum));
+        sixPeriodCounts.entrySet().stream().filter(entry -> entry.getValue() >= 2)
+            .map(entry -> KillBallSupport.kill("近6期至少出现2次", entry.getKey())).forEach(result::add);
+        omissionStats.stream().filter(p -> p.getRight().getStats().getCurrentOmission() >= 35)
+            .map(p -> KillBallSupport.kill("遗漏35期", p.getLeft())).forEach(result::add);
+        return result;
     }
 
     private static List<Integer[]> getIfConsecutive(List<Integer> lastWinRedBalls) {

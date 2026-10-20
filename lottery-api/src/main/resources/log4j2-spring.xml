@@ -6,6 +6,17 @@
     </Properties>
 
     <Appenders>
+        <RollingFile name="LlmRecommendationPayloadFile"
+                     fileName="${LOG_HOME}/llm_recommend_payload.log"
+                     filePattern="${LOG_HOME}/llm_recommend_payload-%d{yyyy-MM-dd}-%i.log.gz">
+            <PatternLayout pattern="[%d{yyyy-MM-dd HH:mm:ss.SSS}][%t] taskId=%X{llmRecommendTaskId} %m%n"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy interval="1" modulate="true"/>
+                <SizeBasedTriggeringPolicy size="10MB"/>
+            </Policies>
+            <DefaultRolloverStrategy max="30"/>
+        </RollingFile>
+
         <!-- 控制台输出 -->
         <Console name="Console" target="SYSTEM_OUT">
             <PatternLayout pattern="[%d{yyyy-MM-dd HH:mm:ss}][%t][%p][%c{1}:%L] %m%n"/>
@@ -51,6 +62,10 @@
     <Loggers>
         <!-- 自定义包日志级别 -->
         <Logger name="com.my.project" level="INFO"/>
+
+        <Logger name="llm.recommend.payload" level="INFO" additivity="false">
+            <AppenderRef ref="LlmRecommendationPayloadFile"/>
+        </Logger>
 
         <Logger name="predict.logs" level="DEBUG" additivity="false">
             <AppenderRef ref="PredictRecordFile"/>

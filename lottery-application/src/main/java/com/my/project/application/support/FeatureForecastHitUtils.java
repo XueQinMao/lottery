@@ -2,19 +2,12 @@ package com.my.project.application.support;
 
 import com.my.project.llm.bo.FeatureForecastBo;
 import com.my.project.llm.bo.FeatureForecastBo.FeatureForecastItem;
-import com.my.project.llm.bo.LotteryAdjustRespBo;
-import com.my.project.llm.bo.LotteryAnalysisRespBo;
-import com.my.project.llm.bo.PatternFeatureAnalysisBo;
-import com.my.project.application.feature.support.PatternFeatureAnalysisSupport;
-import com.my.project.llm.bo.LotteryAdjustViewBo;
 import com.my.project.llm.bo.LotteryAdjustViewBo.FeatureHit;
-import com.my.project.llm.bo.LotteryAdjustViewBo.FeatureHitSummary;
 import com.my.project.application.support.LotteryFeatureTrendUtils.FeatureKind;
 import org.apache.commons.collections4.CollectionUtils;
 
 import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * FeatureForecastHitUtils
@@ -31,97 +24,6 @@ public final class FeatureForecastHitUtils {
     public static final String HIT_MISS = "MISS";
 
     private FeatureForecastHitUtils() {
-    }
-
-    public static LotteryAdjustViewBo toPatternView(LotteryAdjustRespBo resp, LotteryAnalysisRespBo report) {
-        LotteryAdjustViewBo view = new LotteryAdjustViewBo();
-        view.setAdjustedTickets(resp.getAdjustedTickets());
-        view.setFinalRecommendation(resp.getFinalRecommendation());
-        view.setConclusion(resp.getConclusion());
-        view.setFeatureAnalysis(report.getFeatureAnalysis());
-        view.setAdjustedTicketHits(resp.getAdjustedTickets().stream()
-            .map(t -> summarizePattern(t.getAdjustedRedBalls(), t.getAdjustedBlueBall(), report)).toList());
-        view.setFinalSingleHits(resp.getFinalRecommendation().getSingleTickets().stream()
-            .map(t -> summarizePattern(t.getRedBalls(), t.getBlueBall(), report)).toList());
-        return view;
-    }
-
-    public static FeatureHitSummary summarizePattern(List<Integer> reds, Integer blue, LotteryAnalysisRespBo report) {
-        List<FeatureHit> hits = new java.util.ArrayList<>();
-        for (PatternFeatureAnalysisBo item : Optional.ofNullable(report.getFeatureAnalysis()).orElse(List.of())) {
-            if (!"OK".equals(item.getStatus())) continue;
-            List<String> likely = Optional.ofNullable(item.getLikelyValues()).orElse(List.of());
-            List<String> unlikely = Optional.ofNullable(item.getUnlikelyValues()).orElse(List.of());
-            if (likely.isEmpty() && unlikely.isEmpty()) continue;
-            FeatureHit hit = new FeatureHit();
-            hit.setCode(item.getCode());
-            hit.setLabel(item.getLabel());
-            hit.setMainValue(String.join("、", likely));
-            hit.setAlternatives(List.of());
-            if ("tail".equals(item.getCode())) {
-                List<String> tails = reds.stream().map(ball -> String.valueOf(ball % 10)).distinct().sorted().toList();
-                hit.setActual(String.join("、", tails));
-                boolean avoided = tails.stream().noneMatch(unlikely::contains);
-                boolean allLikely = !likely.isEmpty() && tails.containsAll(likely);
-                boolean someLikely = tails.stream().anyMatch(likely::contains);
-                hit.setHitType(avoided && (likely.isEmpty() || allLikely) ? HIT_MAIN
-                    : avoided && someLikely ? HIT_ALT : HIT_MISS);
-            } else {
-                String actual = switch (item.getCode()) {
-                    case "coldWarmHot" -> PatternFeatureAnalysisSupport.coldWarmHotValue(reds, report.getColdHotAnalysis());
-                    case "blueColdWarmHot" -> PatternFeatureAnalysisSupport.blueColdWarmHotValue(blue, report.getColdHotAnalysis());
-                    default -> LotteryFeatureTrendUtils.extract(reds, blue, FeatureKind.fromCode(item.getCode()));
-                };
-                hit.setActual(actual);
-                boolean avoided = unlikely.stream().noneMatch(value -> matches(value, actual));
-                boolean preferred = likely.stream().anyMatch(value -> matches(value, actual));
-                hit.setHitType(avoided && (preferred || likely.isEmpty()) ? HIT_MAIN : HIT_MISS);
-            }
-            hits.add(hit);
-        }
-        FeatureHitSummary summary = new FeatureHitSummary();
-        summary.setHits(hits);
-        summary.setMainHitCount((int)hits.stream().filter(h -> HIT_MAIN.equals(h.getHitType())).count());
-        summary.setAltHitCount((int)hits.stream().filter(h -> HIT_ALT.equals(h.getHitType())).count());
-        summary.setMissCount((int)hits.stream().filter(h -> HIT_MISS.equals(h.getHitType())).count());
-        return summary;
-    }
-
-    public static LotteryAdjustViewBo toView(LotteryAdjustRespBo resp, FeatureForecastBo forecast) {
-        LotteryAdjustViewBo view = new LotteryAdjustViewBo();
-        if (resp == null) {
-            return view;
-        }
-        view.setAdjustedTickets(resp.getAdjustedTickets());
-        view.setFinalRecommendation(resp.getFinalRecommendation());
-        view.setConclusion(resp.getConclusion());
-        view.setFeatureForecast(forecast);
-
-        List<FeatureHitSummary> adjustedHits =
-            Optional.ofNullable(resp.getAdjustedTickets()).orElse(List.of()).stream()
-                .map(ticket -> summarize(ticket.getAdjustedRedBalls(), ticket.getAdjustedBlueBall(), forecast))
-                .toList();
-        view.setAdjustedTicketHits(adjustedHits);
-
-        List<FeatureHitSummary> finalHits =
-            Optional.ofNullable(resp.getFinalRecommendation())
-                .map(r -> Optional.ofNullable(r.getSingleTickets()).orElse(List.of()))
-                .orElse(List.of())
-                .stream()
-                .map(ticket -> summarize(ticket.getRedBalls(), ticket.getBlueBall(), forecast))
-                .toList();
-        view.setFinalSingleHits(finalHits);
-        return view;
-    }
-
-    public static FeatureHitSummary summarize(List<Integer> reds, Integer blue, FeatureForecastBo forecast) {
-        FeatureHitSummary summary = new FeatureHitSummary();
-        List<FeatureHit> hits = analyze(reds, blue, forecast);
-        summary.setHits(hits);
-        summary.setMainHitCount((int) hits.stream().filter(h -> HIT_MAIN.equals(h.getHitType())).count());
-        summary.setAltHitCount((int) hits.stream().filter(h -> HIT_ALT.equals(h.getHitType())).count());
-        summary.setMissCount((int) hits.stream().filter(h -> HIT_MISS.equals(h.getHitType())).count());
-        return summary;
     }
 
     public static List<FeatureHit> analyze(List<Integer> reds, Integer blue, FeatureForecastBo forecast) {

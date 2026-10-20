@@ -2,7 +2,7 @@ package com.my.project.application.feature;
 
 import com.my.project.application.feature.support.PatternFeatureAnalysisSupport;
 import com.my.project.application.history.impl.HistoryRecordServiceImpl;
-import com.my.project.application.support.FeatureForecastHitUtils;
+import com.my.project.application.history.client.SsqDrawHistoryClient;
 import com.my.project.infrastructure.persistence.entity.HistoryRecord;
 import com.my.project.infrastructure.persistence.repository.HistoryRecordRepository;
 import com.my.project.llm.bo.*;
@@ -18,7 +18,7 @@ import static org.mockito.Mockito.*;
 class PatternFeatureStatsConsistencyTest {
     @Test
     void thirtyPeriodInputsMatchOccurrenceAndColdHotStatisticsPages() {
-        var history = spy(new HistoryRecordServiceImpl(mock(HistoryRecordRepository.class)));
+        var history = spy(new HistoryRecordServiceImpl(mock(HistoryRecordRepository.class), mock(SsqDrawHistoryClient.class)));
         // 覆盖所有红球、蓝球、分区边界，分类池随历史变化，不能用最后一份池倒推。
         var records = IntStream.range(0, 60).mapToObj(i -> {
             var reds = IntStream.range(0, 6).map(j -> (i * 7 + j * 5) % 33 + 1).sorted().toArray();
@@ -56,18 +56,4 @@ class PatternFeatureStatsConsistencyTest {
         }
     }
 
-    @Test
-    void recommendationChecksBlueColdHotAgainstCurrentPools() {
-        var pools = ColdHotAnalysisBo.builder().blueHotBalls(List.of(1, 2))
-            .blueWarmBalls(List.of(3)).blueColdBalls(List.of(4)).build();
-        var report = LotteryAnalysisRespBo.builder().coldHotAnalysis(pools)
-            .featureAnalysis(List.of(PatternFeatureAnalysisBo.builder().code("blueColdWarmHot")
-                .label("蓝球冷温热").status("OK").likelyValues(List.of("热")).unlikelyValues(List.of("冷")).build()))
-            .build();
-        var hit = FeatureForecastHitUtils.summarizePattern(List.of(1, 2, 3, 4, 5, 6), 2, report);
-        assertEquals("热", hit.getHits().getFirst().getActual());
-        assertEquals(1, hit.getMainHitCount());
-        assertEquals(1, FeatureForecastHitUtils.summarizePattern(List.of(1, 2, 3, 4, 5, 6), 4, report).getMissCount());
-        assertThrows(IllegalArgumentException.class, () -> PatternFeatureAnalysisSupport.blueColdWarmHotValue(17, pools));
-    }
 }

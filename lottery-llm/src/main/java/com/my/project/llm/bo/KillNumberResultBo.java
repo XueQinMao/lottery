@@ -15,8 +15,8 @@ import java.util.Objects;
  * 随 {@link LotteryAnalysisRespBo#getKillNumbers()} 一并序列化进
  * {@code analysisReportJson}，透传给调优阶段供 LLM 参考。
  *
- * <p>红球分硬杀 {@link #hardKillRed}（LLM 须遵守）与软杀 {@link #softKillRed}（仅参考）。
- * 蓝球分硬杀 {@link #hardKillBlue}（LLM 须遵守）与软杀 {@link #softKillBlue}（仅参考）。
+ * <p>{@code hardKillRed}、{@code hardKillBlue} 沿用历史字段名；推荐与调优仅将其作为规则参考，
+ * 不作禁选条件，不代表真实中奖概率或排除置信度。
  *
  * @author 刘强
  * @version 2026/08/05 19:22
@@ -28,13 +28,13 @@ import java.util.Objects;
 public class KillNumberResultBo {
 
     /**
-     * 硬杀红球：至少 16 个，优先核心邪修+均线，不足再按遗漏/指数补齐。
+     * 红球规则排除建议；历史字段名保留，推荐时不强制排除或限制包含个数。
      */
     private List<KillItemBo> hardKillRed;
 
 
     /**
-     * 硬杀蓝球：仅上期蓝球。LLM 严禁选。
+     * 蓝球规则排除建议；历史字段名保留，推荐时不强制排除。
      */
     private List<KillItemBo> hardKillBlue;
 

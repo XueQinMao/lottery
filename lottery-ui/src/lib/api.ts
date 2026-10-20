@@ -1,17 +1,48 @@
 import type { FeatureStatsVo } from "@/types/feature-stats";
+import type { DrawTrend } from "@/types/draw-trend";
+import type { DrawReview } from "@/types/draw-review";
 import type { LotteryAnalysisResp } from "@/types/llm-analysis";
 import type {
   LotteryAdjustResp,
-  AdjustHistoryFile,
   LlmRecommendTask,
-  LlmRecommendTaskMode,
 } from "@/types/llm-recommend";
 import type { PredictFileRecord } from "@/types/predict-file-record";
-import type { PatternFeature, PatternTrendVo } from "@/types/pattern-trend";
-import type { ColdHotTrendVo } from "@/types/cold-hot-trend";
-import type { ApiResult, BallType, TrendAnalysisVo } from "@/types/trend";
+import type { ApiResult } from "@/types/api-result";
+import type { NumberTrend } from "@/types/number-trend";
+import type { ZoneTrendImage, ZoneTrendSnapshot } from "@/types/zone-trend-analysis";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8866";
+
+export async function fetchDrawReview(period?: string, signal?: AbortSignal): Promise<DrawReview | null> {
+  const params = period ? "?" + new URLSearchParams({ period }) : "";
+  const response = await fetch(`${API_BASE}/api/history/reviews${params}`, { cache: "no-store", signal });
+  if (response.status === 404) return null;
+  const result = await response.json() as ApiResult<DrawReview>;
+  if (!response.ok || result.code !== 200 || !result.data) {
+    throw new Error(result.message || "复盘加载失败");
+  }
+  return result.data;
+}
+
+export async function syncDrawHistory(): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/history`, { method: "POST" });
+  const result = await response.json() as ApiResult<null>;
+  if (!response.ok || result.code !== 200) throw new Error(result.message || "同步开奖失败");
+}
+
+export async function analyzeZoneTrends(snapshot: ZoneTrendSnapshot, images: ZoneTrendImage[], signal: AbortSignal): Promise<LotteryAnalysisResp> {
+  const response = await fetch(`${API_BASE}/api/llm/zone-trends`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ snapshot, images }),
+    signal: AbortSignal.any([signal, AbortSignal.timeout(150_000)]),
+  });
+  const result = await response.json() as ApiResult<LotteryAnalysisResp>;
+  if (!response.ok || result.code !== 200 || !result.data?.zoneTrendAnalysis) {
+    throw new Error(result.message || `走势图分析请求失败：HTTP ${response.status}`);
+  }
+  return result.data;
+}
 
 function withEndPeriod(params: URLSearchParams, endPeriod?: string) {
   const p = endPeriod?.trim();
@@ -20,27 +51,38 @@ function withEndPeriod(params: URLSearchParams, endPeriod?: string) {
   }
 }
 
-export async function fetchTrend(
-  ballType: BallType,
-  ball: number,
-  sampleSize = 100,
-  endPeriod?: string,
-): Promise<TrendAnalysisVo> {
-  const params = new URLSearchParams({
-    ballType,
-    ball: String(ball),
-    sampleSize: String(sampleSize),
-  });
+export async function fetchDrawTrends(
+  sampleSize: number,
+  endPeriod: string,
+  signal?: AbortSignal,
+): Promise<DrawTrend> {
+  const params = new URLSearchParams({ sampleSize: String(sampleSize) });
   withEndPeriod(params, endPeriod);
-  const res = await fetch(`${API_BASE}/api/history/trend?${params}`, {
+  const response = await fetch(`${API_BASE}/api/history/draw-trends?${params}`, {
     cache: "no-store",
+    signal,
+  });
+  if (!response.ok) throw new Error(`历史开奖趋势请求失败：HTTP ${response.status}`);
+  const result = (await response.json()) as ApiResult<DrawTrend>;
+  if (result.code !== 200 || !result.data) {
+    throw new Error(result.message || "历史开奖趋势加载失败");
+  }
+  return result.data;
+}
+
+export async function fetchNumberTrends(sampleSize: number, endPeriod: string, signal?: AbortSignal): Promise<NumberTrend> {
+  const params = new URLSearchParams({ sampleSize: String(sampleSize) });
+  withEndPeriod(params, endPeriod);
+  const res = await fetch(`${API_BASE}/api/history/number-trends?${params}`, {
+    cache: "no-store",
+    signal,
   });
   if (!res.ok) {
     throw new Error(`请求失败: HTTP ${res.status}`);
   }
-  const json = (await res.json()) as ApiResult<TrendAnalysisVo>;
+  const json = (await res.json()) as ApiResult<NumberTrend>;
   if (json.code !== 200 || !json.data) {
-    throw new Error(json.message || "趋势分析失败");
+    throw new Error(json.message || "号码走势图加载失败");
   }
   return json.data;
 }
@@ -48,6 +90,7 @@ export async function fetchTrend(
 export async function fetchFeatureStats(
   sampleSize = 100,
   endPeriod?: string,
+  signal?: AbortSignal,
 ): Promise<FeatureStatsVo> {
   const params = new URLSearchParams({
     sampleSize: String(sampleSize),
@@ -55,6 +98,7 @@ export async function fetchFeatureStats(
   withEndPeriod(params, endPeriod);
   const res = await fetch(`${API_BASE}/api/history/feature-stats?${params}`, {
     cache: "no-store",
+    signal,
   });
   if (!res.ok) {
     throw new Error(`请求失败: HTTP ${res.status}`);
@@ -85,85 +129,15 @@ export async function fetchAnalyzeLatest(
   return json.data;
 }
 
-/** 特征推荐：POST /adjust，不传 drawRecords，仅按 count 生成。 */
-export async function fetchLlmFeatureRecommend(
-  count = 2,
-  userRequirement?: string,
-): Promise<LotteryAdjustResp> {
-  const body: { count: number; userRequirement?: string } = { count };
-  const hint = userRequirement?.trim();
-  if (hint) {
-    body.userRequirement = hint;
-  }
-  const res = await fetch(`${API_BASE}/api/llm/adjust`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    throw new Error(`请求失败: HTTP ${res.status}`);
-  }
-  const json = (await res.json()) as ApiResult<LotteryAdjustResp>;
-  if (json.code !== 200 || !json.data) {
-    throw new Error(json.message || "LLM 推荐失败");
-  }
-  return json.data;
-}
-
-/** 缓存调优：GET /adjust/{count}/{isTopN}。true=评分最高，false=随机抽取。 */
-export async function fetchLlmCacheRecommend(
-  count = 2,
-  isTopN = false,
-  userRequirement?: string,
-): Promise<LotteryAdjustResp> {
-  const params = new URLSearchParams();
-  const hint = userRequirement?.trim();
-  if (hint) {
-    params.set("userRequirement", hint);
-  }
-  const query = params.toString();
-  const res = await fetch(
-    `${API_BASE}/api/llm/adjust/${count}/${isTopN}${query ? `?${query}` : ""}`,
-    {
-      cache: "no-store",
-    },
-  );
-  if (!res.ok) {
-    throw new Error(`请求失败: HTTP ${res.status}`);
-  }
-  const json = (await res.json()) as ApiResult<LotteryAdjustResp>;
-  if (json.code !== 200 || !json.data) {
-    throw new Error(json.message || "LLM 推荐失败");
-  }
-  return json.data;
-}
-
 /** 提交 LLM 推荐异步任务：立即返回 taskId。 */
-export async function submitLlmRecommendTask(input: {
-  mode: LlmRecommendTaskMode;
-  count?: number;
-  isTopN?: boolean;
-  userRequirement?: string;
-}): Promise<LlmRecommendTask> {
-  const body: {
-    mode: LlmRecommendTaskMode;
-    count?: number;
-    isTopN?: boolean;
-    userRequirement?: string;
-  } = { mode: input.mode, count: input.count };
-  if (input.mode === "CACHE") {
-    body.isTopN = input.isTopN ?? true;
-  }
-  const hint = input.userRequirement?.trim();
-  if (hint) {
-    body.userRequirement = hint;
-  }
+export async function submitLlmRecommendTask(useNumberTrend = false): Promise<LlmRecommendTask> {
   const res = await fetch(`${API_BASE}/api/llm/recommend-task`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
     cache: "no-store",
+    ...(useNumberTrend && {
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ useNumberTrend }),
+    }),
   });
   if (!res.ok) {
     throw new Error(`请求失败: HTTP ${res.status}`);
@@ -202,23 +176,6 @@ export async function fetchRunningLlmRecommendTask(): Promise<LlmRecommendTask |
     throw new Error(json.message || "查询进行中任务失败");
   }
   return json.data ?? null;
-}
-
-export async function fetchLlmRecommendHistory(
-  limit = 20,
-): Promise<AdjustHistoryFile[]> {
-  const params = new URLSearchParams({ limit: String(limit) });
-  const res = await fetch(`${API_BASE}/api/llm/adjust/history?${params}`, {
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    throw new Error(`请求失败: HTTP ${res.status}`);
-  }
-  const json = (await res.json()) as ApiResult<AdjustHistoryFile[]>;
-  if (json.code !== 200 || !json.data) {
-    throw new Error(json.message || "获取推荐记录失败");
-  }
-  return json.data;
 }
 
 export async function fetchLlmRecommendHistoryDetail(
@@ -277,52 +234,6 @@ export async function fetchAnalysisHistoryDetail(
   const json = (await res.json()) as ApiResult<LotteryAnalysisResp>;
   if (json.code !== 200 || !json.data) {
     throw new Error(json.message || "读取特征预测详情失败");
-  }
-  return json.data;
-}
-
-export async function fetchPatternTrend(
-  feature: PatternFeature,
-  ratio: string,
-  sampleSize = 100,
-  endPeriod?: string,
-): Promise<PatternTrendVo> {
-  const params = new URLSearchParams({
-    feature,
-    ratio,
-    sampleSize: String(sampleSize),
-  });
-  withEndPeriod(params, endPeriod);
-  const res = await fetch(`${API_BASE}/api/history/pattern-trend?${params}`, {
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    throw new Error(`请求失败: HTTP ${res.status}`);
-  }
-  const json = (await res.json()) as ApiResult<PatternTrendVo>;
-  if (json.code !== 200 || !json.data) {
-    throw new Error(json.message || "形态趋势分析失败");
-  }
-  return json.data;
-}
-
-export async function fetchColdHotTrend(
-  sampleSize = 100,
-  endPeriod?: string,
-): Promise<ColdHotTrendVo> {
-  const params = new URLSearchParams({
-    sampleSize: String(sampleSize),
-  });
-  withEndPeriod(params, endPeriod);
-  const res = await fetch(`${API_BASE}/api/history/cold-hot-trend?${params}`, {
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    throw new Error(`请求失败: HTTP ${res.status}`);
-  }
-  const json = (await res.json()) as ApiResult<ColdHotTrendVo>;
-  if (json.code !== 200 || !json.data) {
-    throw new Error(json.message || "冷温热趋势分析失败");
   }
   return json.data;
 }

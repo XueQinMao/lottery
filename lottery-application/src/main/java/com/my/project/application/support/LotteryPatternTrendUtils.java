@@ -1,6 +1,8 @@
 package com.my.project.application.support;
 
 import lombok.Data;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -73,7 +75,7 @@ public final class LotteryPatternTrendUtils {
         }
 
         public static FeatureType fromCode(String code) {
-            if (code == null || code.isBlank()) {
+            if (StringUtils.isBlank(code)) {
                 return ODD_EVEN;
             }
             String normalized = code.trim();
@@ -90,7 +92,7 @@ public final class LotteryPatternTrendUtils {
      * 解析比例字符串，返回左侧个数 k（如 "1:5" → 1）。两侧之和必须为 6。
      */
     public static int parseRatioLeft(String ratio) {
-        if (ratio == null || ratio.isBlank()) {
+        if (StringUtils.isBlank(ratio)) {
             throw new IllegalArgumentException("ratio 不能为空，格式如 1:5");
         }
         String[] parts = ratio.trim().replace('：', ':').split(":");
@@ -235,7 +237,7 @@ public final class LotteryPatternTrendUtils {
      * @param p    该形态的理论概率
      */
     public static PatternTrendResult analyze(List<Boolean> hits, double p) {
-        if (hits == null || hits.isEmpty()) {
+        if (CollectionUtils.isEmpty(hits)) {
             throw new IllegalArgumentException("命中序列不能为空");
         }
         double prob = p < 0 ? 0 : p;

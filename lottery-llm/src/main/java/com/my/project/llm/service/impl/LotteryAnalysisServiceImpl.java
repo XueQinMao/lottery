@@ -7,6 +7,7 @@ import com.my.project.llm.support.PatternAnalysisParser;
 import com.my.project.llm.support.PatternSequenceEvidence;
 import com.my.project.llm.service.LotteryAnalysisService;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -71,7 +72,7 @@ public class LotteryAnalysisServiceImpl implements LotteryAnalysisService {
             String content = "";
             try {
                 if (Thread.currentThread().isInterrupted()) break;
-                String feedback = correction.isEmpty() ? "按要求直接输出两个部分。" : correction;
+                String feedback = StringUtils.defaultIfEmpty(correction, "按要求直接输出两个部分。");
                 response = lotteryPatternChatClient.prompt()
                     .user(u -> u.text(LotteryPatternAnalysisPrompt.USER)
                         .param("label", request.getLabel())
@@ -80,6 +81,7 @@ public class LotteryAnalysisServiceImpl implements LotteryAnalysisService {
                         .param("allowed", com.alibaba.fastjson2.JSON.toJSONString(request.getAllowedValues()))
                         .param("draws", com.alibaba.fastjson2.JSON.toJSONString(draws))
                         .param("sequenceEvidence", PatternSequenceEvidence.describe(request))
+                        .param("sequenceContext", PatternSequenceEvidence.context(request))
                         .param("summaryRule", PatternSequenceEvidence.requiresExactSummary(request)
                             ? "蓝球类别的形态描述必须逐字使用程序核实的走势事实；理由只写未来延续或切换假设，"
                                 + "不重新叙述历史次数、期号或序列，不使用最近、过去、此前、历史或几期等历史叙述。"
@@ -96,7 +98,7 @@ public class LotteryAnalysisServiceImpl implements LotteryAnalysisService {
                 log.warn("形态描述 [{}] 第{}/{}次{}失败: {}", request.getLabel(), attempt, MAX_ATTEMPTS,
                     providerFailure ? "服务调用" : "输出校验", e.getMessage());
                 if (!providerFailure && !content.isEmpty()) {
-                    String preview = content.substring(0, Math.min(content.length(), 2000))
+                    String preview = StringUtils.left(content, 2000)
                         .replace("\r", "\\r").replace("\n", "\\n");
                     log.warn("形态输出诊断 [{}] finishReason={}，字符数={}，原文前2000字符={}",
                         request.getLabel(), response.getResult().getMetadata().getFinishReason(), content.length(), preview);
@@ -119,7 +121,7 @@ public class LotteryAnalysisServiceImpl implements LotteryAnalysisService {
     }
 
     private static String requireContent(ChatResponse response) {
-        if (response == null || response.getResults() == null || response.getResults().isEmpty()
+        if (response == null || CollectionUtils.isEmpty(response.getResults())
                 || response.getResult().getOutput() == null
                 || StringUtils.isBlank(response.getResult().getOutput().getText())) {
             throw new EmptyModelResponseException("特征模型未返回有效choices/content（空响应），不是特征计算结果");

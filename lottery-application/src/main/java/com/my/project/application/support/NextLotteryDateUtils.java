@@ -24,6 +24,12 @@ public class NextLotteryDateUtils {
         return nextDrawDate(1);
     }
 
+    /** 从历史截止日推导严格晚于它的下一开奖日；不依赖系统当前日期。 */
+    public static LocalDate nextDrawDateAfter(LocalDate cutoffDate) {
+        return Stream.iterate(cutoffDate.plusDays(1), date -> date.plusDays(1))
+            .filter(date -> DRAW_DAYS.contains(date.getDayOfWeek())).findFirst().orElseThrow();
+    }
+
     public static LocalDate prevDrawDate() {
         return Stream.iterate(LocalDate.now().plusDays(-1), d -> d.minusDays(1))
             .filter(d -> DRAW_DAYS.contains(d.getDayOfWeek()))

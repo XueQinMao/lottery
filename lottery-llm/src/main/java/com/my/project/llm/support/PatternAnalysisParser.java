@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.my.project.llm.bo.PatternFeatureAnalysisBo;
 import com.my.project.llm.bo.PatternFeatureAnalysisReqBo;
+import org.apache.commons.lang3.StringUtils;
+
 import java.util.HashSet;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,7 +19,7 @@ public final class PatternAnalysisParser {
     private PatternAnalysisParser() { }
 
     public static PatternFeatureAnalysisBo parse(String text, PatternFeatureAnalysisReqBo req) {
-        if (text == null || text.isBlank()) throw new IllegalArgumentException("模型返回为空");
+        if (StringUtils.isBlank(text)) throw new IllegalArgumentException("模型返回为空");
         String raw = text.strip().replace("\r\n", "\n");
         String first = "一、形态规律总结";
         String second = "二、下期" + req.getLabel() + "推演";

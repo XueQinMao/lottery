@@ -8,6 +8,8 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Optional;
+
 /**
  * HistoryRecordRepositoryImpl
  *
@@ -19,4 +21,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 public class HistoryRecordRepositoryImpl extends ServiceImpl<HistoryRecordMapper, HistoryRecord> implements
     HistoryRecordRepository {
+    @Override
+    public Optional<String> findNextPeriod(String sourcePeriod) {
+        return lambdaQuery().select(HistoryRecord::getPeriod)
+            .gt(HistoryRecord::getPeriod, sourcePeriod)
+            .orderByAsc(HistoryRecord::getPeriod).last("LIMIT 1")
+            .oneOpt().map(HistoryRecord::getPeriod);
+    }
 }

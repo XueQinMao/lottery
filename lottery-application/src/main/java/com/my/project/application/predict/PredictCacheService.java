@@ -50,4 +50,6 @@ public interface PredictCacheService {
      * @return
      */
     PredictCacheVo queryCache(Integer size, List<String> keys);
+
+    List<String> sampleTicketKeys(LocalDate drawDate, int size);
 }

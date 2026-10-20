@@ -62,6 +62,35 @@ public class PredictCacheServiceImpl implements PredictCacheService {
                 String.valueOf(blue)), "|");
     }
 
+    @Override
+    public List<String> sampleTicketKeys(LocalDate drawDate, int size) {
+        String prefix = drawDate + "|";
+        return PredictionCandidateCache.getInstance().sampleKeys(
+            key -> key.startsWith(prefix) && isValidTicketKey(key, prefix.length()), size);
+    }
+
+    private static boolean isValidTicketKey(String key, int start) {
+        int previous = 0;
+        for (int index = 0; index < 6; index++) {
+            int end = key.indexOf(index == 5 ? '|' : ',', start);
+            int ball = readBall(key, start, end);
+            if (ball <= previous || ball > 33) return false;
+            previous = ball;
+            start = end + 1;
+        }
+        int blue = readBall(key, start, key.length());
+        return blue >= 1 && blue <= 16;
+    }
+
+    private static int readBall(String key, int start, int end) {
+        if (end <= start || end - start > 2) return 0;
+        char first = key.charAt(start);
+        if (first < '1' || first > '9') return 0;
+        if (end - start == 1) return first - '0';
+        char second = key.charAt(start + 1);
+        return second >= '0' && second <= '9' ? (first - '0') * 10 + second - '0' : 0;
+    }
+
     /**
      * 查询缓存数据，size=0时获取全量的数据
      * @param size

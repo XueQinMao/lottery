@@ -1,0 +1,4 @@
+lottery:
+  llm:
+    zone-trend:
+      model: ${LOTTERY_ZONE_TREND_MODEL:qwen3-vl-plus}

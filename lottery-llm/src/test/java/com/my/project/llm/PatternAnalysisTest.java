@@ -115,6 +115,10 @@ class PatternAnalysisTest {
         assertTrue(input.contains("\"value\":\"3:3\""));
         assertTrue(input.contains("不得重新估算"));
         assertTrue(input.contains("最近5到8期"));
+        assertTrue(input.contains("\"recent5\""));
+        assertTrue(input.contains("\"preceding10\""));
+        assertTrue(input.contains("earlierSimilarFragmentsAndObservedNextValue"));
+        assertTrue(input.contains("不挑选有利实例"));
         assertTrue(input.contains("不做硬性排除"));
         assertFalse(input.contains("第11期"));
         assertFalse(input.contains("大概率"));

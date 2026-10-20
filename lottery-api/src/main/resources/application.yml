@@ -10,20 +10,6 @@ spring:
     username: root
     password: 5F52uA8npe
     driver-class-name: org.mariadb.jdbc.Driver
-  # DeepSeek 官方平台（https://platform.deepseek.com 申请 API Key）
-  # 不要用 spring.ai.dashscope —— 那是阿里云百炼
-  ai:
-    model:
-      chat: deepseek
-    deepseek:
-      api-key: ${DEEPSEEK_API_KEY:xxxx}
-      base-url: https://api.deepseek.com
-      chat:
-        options:
-          # 调优 / 推荐：思考模型deepseek-v4-pro  deepseek-chat
-          model: deepseek-v4-pro
-          temperature: 0.9
-          #max-tokens: 16384
 mybatis-plus:
   configuration:
     #log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
@@ -31,21 +17,30 @@ mybatis-plus:
   mapper-locations: classpath*:mapper/**/*.xml
 lottery:
   llm:
+    zone-trend:
+      # 三区个数+三区比多模态试点，独立于原来的纯文本全特征分析-视觉模型。
+      api-key: ${LOTTERY_ZONE_TREND_API_KEY:${DASHSCOPE_API_KEY:}}
+      base-url: ${LOTTERY_ZONE_TREND_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}
+      model: ${LOTTERY_ZONE_TREND_MODEL:qwen4-max}
+      read-timeout: 120s
+      max-tokens: 4096
     analysis:
       # java：snapshot 的 indexValues 前后期差值趋势本地计算
       # llm-pattern：最近10期开奖逐项分析；冷温热需要每期前30期，至少40期开奖
       engine: llm-pattern
       # 百炼中国内地（北京），密钥需要与接入地域匹配。
-      api-key: ${DASHSCOPE_API_KEY:}
+      api-key: ${DASHSCOPE_API_KEY:""}
       # 不包含 /v1，客户端补齐 /v1/chat/completions。
       base-url: ${DASHSCOPE_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}
-      model: ${LOTTERY_ANALYSIS_MODEL:qwen-flash}
-      temperature: 0.2
+      model: ${LOTTERY_ANALYSIS_MODEL:qwen4-max}
+      temperature: 0.8
       max-tokens: 2048
       # 特征分析独立限制网络等待；最多2次应用层尝试，不叠加SDK重试。
       connect-timeout: 10s
       read-timeout: 120s
       retry-delay: 2s
+    recommendation:
+      max-tokens: ${LOTTERY_RECOMMENDATION_MAX_TOKENS:4096}
   model:
     path: D:\home\python\
     csv:
@@ -58,6 +53,6 @@ lottery:
       # 是否启用 L2 本地磁盘缓存
       disk-enabled: true
       # L2 磁盘缓存目录（存放 LLM 分析结果 JSON 文件）
-      disk-dir: D:/home/cache/llm
+      disk-dir: D:\home\python\analysis
       # L1 内存缓存最大容量
       memory-size: 1

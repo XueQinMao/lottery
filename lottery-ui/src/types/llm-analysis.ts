@@ -83,6 +83,7 @@ export interface FeatureForecast {
 
 /** 调优/推荐用特征报告：仅含选号约束模块，不含历史直方图 */
 export interface LotteryAnalysisResp {
+  zoneTrendAnalysis?: import("@/types/zone-trend-analysis").ZoneTrendAnalysis;
   featureAnalysis?: PatternFeatureAnalysis[];
   recentDrawRecords?: DrawRecord[];
   killNumbers?: KillNumberResult;

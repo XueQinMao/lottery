@@ -23,25 +23,26 @@ export default function SampleQueryBar({
 }: Props) {
   return (
     <div className="sample-query-bar">
-      <div className="type-tabs">
+      <div className="sample-size-control"><span className="query-label">期数</span><div className="type-tabs" aria-label="展示期数">
         {SAMPLE_OPTIONS.map((n) => (
           <button
             key={n}
             type="button"
             className={`type-tab ${sampleSize === n ? "active" : ""}`}
+            aria-pressed={sampleSize === n}
             onClick={() => onSampleSizeChange(n)}
           >
             近 {n} 期
           </button>
         ))}
-      </div>
+      </div></div>
       <div className="period-query">
         <label htmlFor="end-period-input">截止期号</label>
         <input
           id="end-period-input"
           type="text"
           inputMode="numeric"
-          placeholder="空=最新，如 2026092"
+          placeholder="最新开奖"
           value={endPeriod}
           onChange={(e) => onEndPeriodChange(e.target.value.trim())}
           onKeyDown={(e) => {
@@ -51,7 +52,7 @@ export default function SampleQueryBar({
           }}
         />
         {onApply && (
-          <button type="button" className="type-tab" onClick={onApply}>
+          <button type="button" className="primary-btn query-apply" onClick={onApply}>
             查询
           </button>
         )}

@@ -2,6 +2,7 @@ package com.my.project.llm.bo;
 
 import lombok.Data;
 
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -19,7 +20,7 @@ public class LotteryAdjustViewBo {
     private List<LotteryAdjustRespBo.AdjustedTicket> adjustedTickets;
     private LotteryAdjustRespBo.FinalRecommendation finalRecommendation;
     private String conclusion;
-    /** 本次推荐落盘文件名，如 adjust_20260916103000_c2_topNfalse.json */
+    /** 本次推荐落盘文件名，如 adjust_20260916103000.json */
     private String fileName;
     /** 本次推荐所依据的形态推算 */
     private FeatureForecastBo featureForecast;
@@ -28,6 +29,16 @@ public class LotteryAdjustViewBo {
     private List<FeatureHitSummary> adjustedTicketHits;
     /** 与 {@link LotteryAdjustRespBo.FinalRecommendation#getSingleTickets()} 按下标对齐 */
     private List<FeatureHitSummary> finalSingleHits;
+    private String targetPeriod;
+    private String sourcePeriod;
+    private Instant generatedAt;
+    private List<FeatureCoverage> complexHits;
+    /** null 为常规推荐，空列表表示报告没有走势观察。 */
+    private List<NumberTrendObservation> numberTrendObservations;
+    private List<ZoneTrendImage> numberTrendImages;
+
+    public record FeatureCoverage(String code, String label, String mainValue, List<String> alternatives,
+                                  long mainHitBets, long altHitBets) { }
 
     @Data
     public static class FeatureHitSummary {

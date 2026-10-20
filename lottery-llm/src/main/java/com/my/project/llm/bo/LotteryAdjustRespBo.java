@@ -7,12 +7,7 @@ import java.util.List;
 /**
  * LotteryAdjustRespBo
  *
- * <p>大模型号码调优 / 推荐结果：
- * <ul>
- *     <li>各组：仅单式调整结果 {@link #adjustedTickets}（不含组内复式）</li>
- *     <li>全局：综合后的最终推荐包 {@link #finalRecommendation}
- *         （2 组单式 + 1 组复式）</li>
- * </ul>
+ * <p>号码推荐结果，兼容已保存的旧版推荐包。
  *
  * @author 刘强
  * @version 2026/07/22 11:42
@@ -26,7 +21,7 @@ public class LotteryAdjustRespBo {
     private List<AdjustedTicket> adjustedTickets;
 
     /**
-     * 基于整体调优 / 推荐结果凝练的最终可购买方案（唯一）。
+     * 复式推荐及历史记录中的额外单式。
      */
     private FinalRecommendation finalRecommendation;
 
@@ -34,13 +29,12 @@ public class LotteryAdjustRespBo {
     private String conclusion;
 
     /**
-     * 最终推荐包：2 组单式 + 1 组复式。
+     * 复式及旧版单式归档结构。
      */
     @Data
     public static class FinalRecommendation {
         /**
-         * 最终推荐购买的单式玩法（恰好 2 组）。
-         * <p>每组红球 6 个 + 蓝球 1 个，共 1 注；两组分别针对不同形态假设。
+         * 旧版推荐记录中的额外单式。
          */
         private List<SingleTicket> singleTickets;
         /**
@@ -57,14 +51,11 @@ public class LotteryAdjustRespBo {
     public static class AdjustedTicket {
         /** 对应入参的组标识 */
         private String id;
+        private TicketCategory category;
         /** 原始红球（升序）；推荐模式可为 null */
         private List<Integer> originalRedBalls;
         /** 原始蓝球；推荐模式可为 null */
         private Integer originalBlueBall;
-        /** 被替换的红球及替换说明；推荐模式为空数组 */
-        private List<RedReplacement> redReplacements;
-        /** 被替换的蓝球及替换说明；推荐模式可为 null */
-        private BlueReplacement blueReplacement;
         /** 调整后 / 推荐的红球（升序，6 个） */
         private List<Integer> adjustedRedBalls;
         /** 调整后 / 推荐的蓝球 */
@@ -73,19 +64,7 @@ public class LotteryAdjustRespBo {
         private String reason;
     }
 
-    @Data
-    public static class RedReplacement {
-        private Integer from;
-        private Integer to;
-        private String basis;
-    }
-
-    @Data
-    public static class BlueReplacement {
-        private Integer from;
-        private Integer to;
-        private String basis;
-    }
+    public enum TicketCategory { OPTIMIZED, RECOMMENDED, FULL_MATCH }
 
     /**
      * 复式：红球 7-10 个，蓝球 2-5 个。

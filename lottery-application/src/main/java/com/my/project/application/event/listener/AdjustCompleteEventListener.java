@@ -3,7 +3,6 @@ package com.my.project.application.event.listener;
 import com.my.project.application.event.AdjustCompleteEvent;
 import com.my.project.application.selection.BuyRecordService;
 import com.my.project.application.selection.enums.BuyRecordType;
-import com.my.project.application.support.NextLotteryDateUtils;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
@@ -26,7 +25,6 @@ public class AdjustCompleteEventListener {
 
     @EventListener
     public void handleEvent(AdjustCompleteEvent event) {
-        buyRecordService.batchSave(event.getAdjustRespBo(), NextLotteryDateUtils.nextDrawDate(),
-            BuyRecordType.MANUAL);
+        buyRecordService.batchSave(event.getAdjustRespBo(), event.getDrawDate(), BuyRecordType.MANUAL);
     }
 }

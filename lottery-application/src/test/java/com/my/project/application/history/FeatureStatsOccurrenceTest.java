@@ -3,6 +3,7 @@ package com.my.project.application.history;
 import com.my.project.infrastructure.persistence.entity.HistoryRecord;
 import com.my.project.infrastructure.persistence.repository.HistoryRecordRepository;
 import com.my.project.application.history.impl.HistoryRecordServiceImpl;
+import com.my.project.application.history.client.SsqDrawHistoryClient;
 import com.my.project.application.history.vo.FeatureStatsVo;
 import org.junit.jupiter.api.Test;
 
@@ -13,7 +14,7 @@ import static org.mockito.Mockito.*;
 
 class FeatureStatsOccurrenceTest {
     private final HistoryRecordServiceImpl service = spy(new HistoryRecordServiceImpl(
-        mock(HistoryRecordRepository.class)));
+        mock(HistoryRecordRepository.class), mock(SsqDrawHistoryClient.class)));
 
     @Test
     void preservesChronologyAndIncludesEveryCategoryWithCorrectRates() {

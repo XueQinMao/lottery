@@ -1,7 +1,13 @@
 package com.my.project.application.support;
 
+import org.apache.commons.lang3.StringUtils;
+
 import java.util.ArrayList;
+import java.util.IntSummaryStatistics;
 import java.util.List;
+import java.util.Objects;
+import java.util.function.IntUnaryOperator;
+import java.util.stream.IntStream;
 
 /**
  * LotteryFeatureTrendUtils
@@ -38,6 +44,8 @@ public final class LotteryFeatureTrendUtils {
 
     private static final int[] SUM_WAYS = new int[184];
     private static final int[] SUM_TAIL_WAYS = new int[10];
+    private static final List<String> BLUE_SIZE_PARITY = List.of("小奇", "小偶", "大奇", "大偶");
+    private static final List<String> BLUE_ROADS = List.of("0路", "1路", "2路");
 
     static {
         enumerateSums(1, RED_DRAW, 0);
@@ -110,7 +118,7 @@ public final class LotteryFeatureTrendUtils {
         }
 
         public static FeatureKind fromCode(String code) {
-            if (code == null || code.isBlank()) {
+            if (StringUtils.isBlank(code)) {
                 return ODD_EVEN;
             }
             String normalized = code.trim();
@@ -168,17 +176,8 @@ public final class LotteryFeatureTrendUtils {
                 list.add("小");
                 list.add("大");
             }
-            case BLUE_BIG_SMALL_ODD_EVEN -> {
-                list.add("小奇");
-                list.add("小偶");
-                list.add("大奇");
-                list.add("大偶");
-            }
-            case BLUE_RATIO_012 -> {
-                list.add("0路");
-                list.add("1路");
-                list.add("2路");
-            }
+            case BLUE_BIG_SMALL_ODD_EVEN -> list.addAll(BLUE_SIZE_PARITY);
+            case BLUE_RATIO_012 -> list.addAll(BLUE_ROADS);
         }
         return list;
     }
@@ -202,7 +201,7 @@ public final class LotteryFeatureTrendUtils {
     }
 
     public static String normalizeBucket(FeatureKind kind, String raw) {
-        if (raw == null || raw.isBlank()) {
+        if (StringUtils.isBlank(raw)) {
             return defaultBucket(kind);
         }
         String s = raw.trim().replace('：', ':').replace('—', '-').replace('～', '-');
@@ -215,81 +214,70 @@ public final class LotteryFeatureTrendUtils {
                 int[] t = parseTriple(s);
                 yield t[0] + ":" + t[1] + ":" + t[2];
             }
-            case SPAN -> {
-                int span = parseIntBucket(s, "跨度");
-                if (span < SPAN_MIN || span > SPAN_MAX) {
-                    throw new IllegalArgumentException("跨度范围为 " + SPAN_MIN + "-" + SPAN_MAX);
-                }
-                yield String.valueOf(span);
-            }
-            case SUM_RANGE -> {
-                String bucket = sumRangeOf(parseSumRangeLow(s));
-                if (bucket == null) {
-                    throw new IllegalArgumentException("和值区间格式如 73-78");
-                }
-                yield bucket;
-            }
-            case SUM_TAIL -> {
-                int d = parseIntBucket(s, "和值尾数");
-                if (d < 0 || d > 9) {
-                    throw new IllegalArgumentException("和值尾数范围为 0-9");
-                }
-                yield String.valueOf(d);
-            }
-            case ZONE1_COUNT, ZONE2_COUNT, ZONE3_COUNT -> {
-                int k = parseIntBucket(s.replace("个", ""), "区个数");
-                if (k < 0 || k > RED_DRAW) {
-                    throw new IllegalArgumentException("区个数范围为 0-6");
-                }
-                yield String.valueOf(k);
-            }
-            case BLUE_ODD_EVEN -> {
-                if (s.contains("奇") || "odd".equalsIgnoreCase(s)) {
-                    yield "奇";
-                }
-                if (s.contains("偶") || "even".equalsIgnoreCase(s)) {
-                    yield "偶";
-                }
-                throw new IllegalArgumentException("蓝球奇偶仅支持 奇/偶");
-            }
-            case BLUE_BIG_SMALL -> {
-                if (s.contains("大") || "big".equalsIgnoreCase(s)) {
-                    yield "大";
-                }
-                if (s.contains("小") || "small".equalsIgnoreCase(s)) {
-                    yield "小";
-                }
-                throw new IllegalArgumentException("蓝球大小仅支持 大/小");
-            }
-            case BLUE_BIG_SMALL_ODD_EVEN -> {
-                String compact = s.replace("数", "").replace("号", "");
-                if (compact.contains("小奇")) {
-                    yield "小奇";
-                }
-                if (compact.contains("小偶")) {
-                    yield "小偶";
-                }
-                if (compact.contains("大奇")) {
-                    yield "大奇";
-                }
-                if (compact.contains("大偶")) {
-                    yield "大偶";
-                }
-                throw new IllegalArgumentException("蓝球大小奇偶仅支持 小奇/小偶/大奇/大偶");
-            }
-            case BLUE_RATIO_012 -> {
-                if (s.startsWith("0") || s.contains("0路")) {
-                    yield "0路";
-                }
-                if (s.startsWith("1") || s.contains("1路")) {
-                    yield "1路";
-                }
-                if (s.startsWith("2") || s.contains("2路")) {
-                    yield "2路";
-                }
-                throw new IllegalArgumentException("蓝球012路仅支持 0路/1路/2路");
-            }
+            case SPAN -> normalizeBoundedInt(s, "跨度", SPAN_MIN, SPAN_MAX);
+            case SUM_RANGE -> normalizeSumRange(s);
+            case SUM_TAIL -> normalizeBoundedInt(s, "和值尾数", 0, 9);
+            case ZONE1_COUNT, ZONE2_COUNT, ZONE3_COUNT -> normalizeBoundedInt(s.replace("个", ""), "区个数", 0, RED_DRAW);
+            case BLUE_ODD_EVEN -> normalizeBlueParity(s);
+            case BLUE_BIG_SMALL -> normalizeBlueSize(s);
+            case BLUE_BIG_SMALL_ODD_EVEN -> normalizeBlueSizeParity(s);
+            case BLUE_RATIO_012 -> normalizeBlueRoad(s);
         };
+    }
+
+    private static String normalizeBoundedInt(String value, String label, int min, int max) {
+        int number = parseIntBucket(value, label);
+        if (number < min || number > max) {
+            throw new IllegalArgumentException(label + "范围为 " + min + "-" + max);
+        }
+        return String.valueOf(number);
+    }
+
+    private static String normalizeSumRange(String value) {
+        String bucket = sumRangeOf(parseSumRangeLow(value));
+        if (bucket == null) {
+            throw new IllegalArgumentException("和值区间格式如 73-78");
+        }
+        return bucket;
+    }
+
+    private static String normalizeBlueParity(String value) {
+        if (value.contains("奇") || "odd".equalsIgnoreCase(value)) {
+            return "奇";
+        }
+        if (value.contains("偶") || "even".equalsIgnoreCase(value)) {
+            return "偶";
+        }
+        throw new IllegalArgumentException("蓝球奇偶仅支持 奇/偶");
+    }
+
+    private static String normalizeBlueSize(String value) {
+        if (value.contains("大") || "big".equalsIgnoreCase(value)) {
+            return "大";
+        }
+        if (value.contains("小") || "small".equalsIgnoreCase(value)) {
+            return "小";
+        }
+        throw new IllegalArgumentException("蓝球大小仅支持 大/小");
+    }
+
+    private static String normalizeBlueSizeParity(String value) {
+        String compact = value.replace("数", "").replace("号", "");
+        for (String option : BLUE_SIZE_PARITY) {
+            if (compact.contains(option)) {
+                return option;
+            }
+        }
+        throw new IllegalArgumentException("蓝球大小奇偶仅支持 小奇/小偶/大奇/大偶");
+    }
+
+    private static String normalizeBlueRoad(String value) {
+        for (String road : BLUE_ROADS) {
+            if (value.startsWith(road.substring(0, 1)) || value.contains(road)) {
+                return road;
+            }
+        }
+        throw new IllegalArgumentException("蓝球012路仅支持 0路/1路/2路");
     }
 
     public static String extract(List<Integer> reds, Integer blue, FeatureKind kind) {
@@ -319,70 +307,46 @@ public final class LotteryFeatureTrendUtils {
         if (kind.isBlue()) {
             throw new IllegalArgumentException(kind.getLabel() + " 需传入蓝球，请使用 extract(reds, blue, kind)");
         }
-        int odd = 0;
-        int big = 0;
-        int prime = 0;
-        int r0 = 0;
-        int r1 = 0;
-        int r2 = 0;
-        int z1 = 0;
-        int z2 = 0;
-        int z3 = 0;
-        int min = Integer.MAX_VALUE;
-        int max = Integer.MIN_VALUE;
-        int sum = 0;
-        for (Integer ball : reds) {
-            if (ball == null) {
-                continue;
-            }
-            int b = ball;
-            sum += b;
-            if (b < min) {
-                min = b;
-            }
-            if (b > max) {
-                max = b;
-            }
-            if (b % 2 == 1) {
-                odd++;
-            }
-            if (b >= 17) {
-                big++;
-            }
-            if (LotteryPatternTrendUtils.RED_PRIMES.contains(b)) {
-                prime++;
-            }
-            int mod = b % 3;
-            if (mod == 0) {
-                r0++;
-            } else if (mod == 1) {
-                r1++;
-            } else {
-                r2++;
-            }
-            if (b <= 11) {
-                z1++;
-            } else if (b <= 22) {
-                z2++;
-            } else {
-                z3++;
-            }
-        }
+        IntStream numbers = reds.stream().filter(Objects::nonNull).mapToInt(Integer::intValue);
         return switch (kind) {
-            case ODD_EVEN -> odd + ":" + (RED_DRAW - odd);
-            case BIG_SMALL -> big + ":" + (RED_DRAW - big);
-            case PRIME_COMP -> prime + ":" + (RED_DRAW - prime);
-            case RATIO_012 -> r0 + ":" + r1 + ":" + r2;
-            case SPAN -> String.valueOf(max - min);
-            case SUM_RANGE -> sumRangeOf(sum);
-            case SUM_TAIL -> String.valueOf(sum % 10);
-            case THREE_ZONE -> z1 + ":" + z2 + ":" + z3;
-            case ZONE1_COUNT -> String.valueOf(z1);
-            case ZONE2_COUNT -> String.valueOf(z2);
-            case ZONE3_COUNT -> String.valueOf(z3);
+            case ODD_EVEN -> LotteryPatternTrendUtils.toRatio((int) numbers.filter(ball -> ball % 2 == 1).count());
+            case BIG_SMALL -> LotteryPatternTrendUtils.toRatio((int) numbers.filter(ball -> ball >= 17).count());
+            case PRIME_COMP -> LotteryPatternTrendUtils.toRatio(
+                (int) numbers.filter(LotteryPatternTrendUtils.RED_PRIMES::contains).count());
+            case RATIO_012 -> StringUtils.join(countByBucket(numbers, LotteryFeatureTrendUtils::roadIndex), ':');
+            case SPAN -> spanOf(numbers);
+            case SUM_RANGE -> sumRangeOf(numbers.sum());
+            case SUM_TAIL -> String.valueOf(numbers.sum() % 10);
+            case THREE_ZONE -> StringUtils.join(countByBucket(numbers, LotteryFeatureTrendUtils::zoneIndex), ':');
+            case ZONE1_COUNT -> String.valueOf(numbers.filter(ball -> zoneIndex(ball) == 0).count());
+            case ZONE2_COUNT -> String.valueOf(numbers.filter(ball -> zoneIndex(ball) == 1).count());
+            case ZONE3_COUNT -> String.valueOf(numbers.filter(ball -> zoneIndex(ball) == 2).count());
             case BLUE_ODD_EVEN, BLUE_BIG_SMALL, BLUE_BIG_SMALL_ODD_EVEN, BLUE_RATIO_012 ->
                 throw new IllegalStateException("蓝球形态应走 extractBlue");
         };
+    }
+
+    private static int[] countByBucket(IntStream numbers, IntUnaryOperator bucketIndex) {
+        int[] counts = new int[3];
+        numbers.forEach(ball -> counts[bucketIndex.applyAsInt(ball)]++);
+        return counts;
+    }
+
+    private static int roadIndex(int ball) {
+        int remainder = ball % 3;
+        return remainder < 0 ? 2 : remainder;
+    }
+
+    private static int zoneIndex(int ball) {
+        if (ball <= 11) {
+            return 0;
+        }
+        return ball <= 22 ? 1 : 2;
+    }
+
+    private static String spanOf(IntStream numbers) {
+        IntSummaryStatistics stats = numbers.summaryStatistics();
+        return String.valueOf(stats.getMax() - stats.getMin());
     }
 
     public static double theoreticalProb(FeatureKind kind, String bucket) {

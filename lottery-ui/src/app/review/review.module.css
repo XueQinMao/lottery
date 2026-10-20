@@ -1,0 +1,149 @@
+.toolbar, .draw, .sectionHeader, .ticketLine, .ticketNumbers, .ticketStats, .prizes, .balls, .ballGroup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.toolbar, .sectionHeader, .ticketLine {
+  justify-content: space-between;
+}
+
+.draw {
+  flex-direction: row;
+  justify-content: space-between;
+  padding-block: 18px;
+}
+
+.draw h2, .section h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.draw time {
+  display: inline-block;
+  margin-top: 4px;
+}
+
+.sync {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.section {
+  gap: 14px;
+}
+
+.featureGroup h3, .ticket h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.featureTable {
+  min-width: 500px;
+}
+
+.learningTable {
+  min-width: 700px;
+}
+
+.learningTable td {
+  vertical-align: top;
+}
+
+.featureTable th:first-child {
+  width: 18%;
+}
+
+.featureTable th:last-child {
+  width: 108px;
+}
+
+.value {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.alternatives {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 9px;
+}
+
+.matched {
+  color: #276044;
+  background: #e8f6ec;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-weight: 600;
+  box-decoration-break: clone;
+}
+
+.recommendation {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.recommendation summary {
+  cursor: pointer;
+  padding: 10px 12px;
+}
+
+.recommendation summary > span:not(:last-child) {
+  margin-right: 10px;
+}
+
+.reportTime {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.tickets {
+  padding: 0 12px 4px;
+}
+
+.ticket {
+  padding: 12px 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.ticketLine + .ticketLine {
+  margin-top: 8px;
+}
+
+.ticketStats, .muted {
+  font-size: 12px;
+  color: var(--color-muted-foreground);
+}
+
+.ballGroup {
+  gap: 4px;
+}
+
+.ballGroup .hitBall {
+  margin: 0;
+  background: var(--color-ball-red);
+  color: #fff;
+}
+
+.ballGroup + .ballGroup .hitBall {
+  background: var(--color-ball-blue);
+}
+
+.ballGroup .dimBall {
+  margin: 0;
+  background: var(--color-muted);
+  color: var(--color-muted-foreground);
+}
+
+.prizes {
+  flex-basis: 100%;
+}

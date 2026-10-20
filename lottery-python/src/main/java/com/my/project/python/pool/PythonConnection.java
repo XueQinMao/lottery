@@ -1,7 +1,7 @@
 package com.my.project.python.pool;
 
-import com.alibaba.fastjson.JSONObject;
 import com.my.project.python.support.ResourcePathUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.io.*;
@@ -17,8 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class PythonConnection implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(PythonConnection.class);
     private final Process process;
-    private final BufferedWriter writer;
-    private final BufferedReader reader;
+    private final PythonLineProtocol protocol;
     private final Duration requestTimeout;
     private final AtomicBoolean closed = new AtomicBoolean();
     private final ArrayDeque<String> stderrTail = new ArrayDeque<>();
@@ -32,8 +31,9 @@ public class PythonConnection implements AutoCloseable {
     PythonConnection(Process process, Duration initTimeout, Duration requestTimeout) throws IOException {
         this.process = process;
         this.requestTimeout = requestTimeout;
-        writer = new BufferedWriter(new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8));
-        reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
+        var writer = new BufferedWriter(new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8));
+        var reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
+        protocol = new PythonLineProtocol(reader, writer);
         io = Executors.newSingleThreadExecutor(Thread.ofPlatform().daemon().name("python-io-" + process.pid()).factory());
         Thread.ofPlatform().daemon().name("python-stderr-" + process.pid()).start(this::consumeStderr);
         process.onExit().thenAccept(p -> {
@@ -42,10 +42,7 @@ public class PythonConnection implements AutoCloseable {
         });
         try {
             timed(() -> {
-                JSONObject init = parse(reader.readLine());
-                if (!"init_complete".equals(init.getString("type"))) throw new IOException("Python初始化失败: " + init);
-                JSONObject check = parse(exchange(Map.of("type", "init_check")));
-                if (!"initialized".equals(check.getString("status"))) throw new IOException("Python初始化检查失败: " + check);
+                protocol.handshake();
                 return null;
             }, initTimeout);
             log.info("Python连接就绪 pid={}", process.pid());
@@ -66,32 +63,8 @@ public class PythonConnection implements AutoCloseable {
     public synchronized String execute(Map<String, Object> request) throws IOException {
         if (!isHealthy()) throw new IOException("Python连接不可用 pid=" + process.pid() + " stderr=" + stderr());
         try {
-            return timed(() -> {
-                String line = exchange(request);
-                JSONObject response = parse(line);
-                if (response.containsKey("error") || "error".equals(response.getString("status")))
-                    throw new IOException("Python预测返回错误: " + response);
-                return line;
-            }, requestTimeout);
+            return timed(() -> protocol.request(request), requestTimeout);
         } catch (IOException e) { close(); throw e; }
-    }
-
-    private String exchange(Map<String, Object> request) throws IOException {
-        writer.write(JSONObject.toJSONString(request));
-        writer.newLine();
-        writer.flush();
-        return reader.readLine();
-    }
-
-    private static JSONObject parse(String line) throws IOException {
-        if (line == null) throw new IOException("Python服务连接已断开（EOF）");
-        try {
-            JSONObject result = JSONObject.parseObject(line);
-            if (result == null) throw new IOException("Python返回空响应");
-            return result;
-        } catch (RuntimeException e) {
-            throw new IOException("Python响应不是有效JSON对象: " + line.substring(0, Math.min(512, line.length())), e);
-        }
     }
 
     private <T> T timed(Callable<T> task, Duration timeout) throws IOException {
@@ -122,7 +95,7 @@ public class PythonConnection implements AutoCloseable {
             while ((line = errors.readLine()) != null) {
                 synchronized (stderrTail) {
                     if (stderrTail.size() == 30) stderrTail.removeFirst();
-                    stderrTail.addLast(line.substring(0, Math.min(2048, line.length())));
+                    stderrTail.addLast(StringUtils.left(line, 2048));
                 }
                 if (line.startsWith("[资源]")) log.info("Python pid={} {}", process.pid(), line);
                 else log.debug("Python pid={} stderr: {}", process.pid(), line);

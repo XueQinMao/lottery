@@ -15,6 +15,8 @@ export interface FeatureLineChartProps {
   avgDisplay?: string;
   lineColor?: string;
   labels?: string[];
+  tooltipLabel?: string;
+  zoom?: boolean;
   yMin?: number;
   yMax?: number;
   yInterval?: number;
@@ -29,8 +31,10 @@ export default function FeatureLineChart({
   avg,
   avgLabel = "平均",
   avgDisplay,
-  lineColor = "#3B82F6",
+  lineColor = CHART_THEME.ballBlue,
   labels,
+  tooltipLabel = "比例",
+  zoom = false,
   yMin,
   yMax,
   yInterval,
@@ -52,9 +56,11 @@ export default function FeatureLineChart({
         backgroundColor: "transparent",
         tooltip: {
           trigger: "axis",
+          confine: true,
           backgroundColor: CHART_THEME.tooltipBg,
           borderColor: CHART_THEME.tooltipBorder,
           textStyle: { color: CHART_THEME.text },
+          extraCssText: "box-shadow: 0 6px 24px #26334512; border-radius: 8px; padding: 10px 14px;",
           formatter: (
             params: Array<{
               dataIndex: number;
@@ -69,23 +75,45 @@ export default function FeatureLineChart({
             return (
               `期号: ${params[0].axisValue}<br/>` +
               `${yName}: ${display}` +
-              (ratio ? `<br/>比例: ${ratio}` : "")
+              (ratio ? `<br/>${tooltipLabel}: ${ratio}` : "")
             );
           },
         },
-        grid: { left: 50, right: 70, top: 28, bottom: 48 },
+        grid: { left: 12, right: 18, top: 32, bottom: zoom ? 76 : 52, containLabel: true },
+        dataZoom: zoom ? [
+          {
+            type: "inside",
+            filterMode: "none",
+            zoomOnMouseWheel: false,
+            moveOnMouseWheel: false,
+            preventDefaultMouseMove: false,
+          },
+          {
+            type: "slider", height: 14, bottom: 8, borderColor: "transparent",
+            backgroundColor: CHART_THEME.split, fillerColor: "#48679b16",
+            dataBackground: { lineStyle: { color: CHART_THEME.axis }, areaStyle: { color: CHART_THEME.split } },
+            selectedDataBackground: { lineStyle: { color: lineColor }, areaStyle: { color: "#48679b12" } },
+            handleStyle: { color: CHART_THEME.tooltipBg, borderColor: CHART_THEME.axis },
+            moveHandleStyle: { color: CHART_THEME.axis },
+            textStyle: { color: CHART_THEME.muted },
+          },
+        ] : [],
         xAxis: {
           type: "category",
           data: periods,
           name: "期号",
+          nameLocation: "middle",
+          nameGap: 28,
           nameTextStyle: { color: CHART_THEME.muted },
           axisLabel: {
             color: CHART_THEME.muted,
-            interval: Math.max(0, Math.floor(periods.length / 10) - 1),
-            fontSize: 10,
-            rotate: 45,
+            interval: "auto",
+            hideOverlap: true,
+            fontSize: 11,
+            margin: 12,
           },
           axisLine: { lineStyle: { color: CHART_THEME.axis } },
+          axisTick: { show: false },
         },
         yAxis: {
           type: "value",
@@ -96,6 +124,7 @@ export default function FeatureLineChart({
           nameTextStyle: { color: CHART_THEME.muted },
           axisLabel: {
             color: CHART_THEME.muted,
+            fontSize: 11,
             ...(yFormatter ? { formatter: yFormatter } : {}),
           },
           splitLine: { lineStyle: { color: CHART_THEME.split } },
@@ -106,19 +135,20 @@ export default function FeatureLineChart({
             type: "line",
             data: values,
             symbol: "circle",
-            symbolSize: 7,
+            showSymbol: false,
+            symbolSize: 6,
             itemStyle: { color: lineColor },
-            lineStyle: { color: lineColor, width: 2 },
+            lineStyle: { color: lineColor, width: 1.8 },
             markLine: {
               symbol: "none",
               silent: true,
               data: [
                 {
                   yAxis: avg,
-                  lineStyle: { color: "#d29922", type: "dashed", width: 1.5 },
+                  lineStyle: { color: "#a4b1c2", type: "dashed", width: 1 },
                   label: {
                     formatter: `${avgLabel} ${avgText}`,
-                    color: "#d29922",
+                    color: CHART_THEME.muted,
                     position: "insideEndTop",
                     fontSize: 11,
                   },
@@ -132,13 +162,16 @@ export default function FeatureLineChart({
     );
 
     const onResize = () => chartRef.current?.resize();
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    const observer = new ResizeObserver(onResize);
+    observer.observe(boxRef.current);
+    return () => observer.disconnect();
   }, [
     avg,
     avgLabel,
     avgDisplay,
     labels,
+    tooltipLabel,
+    zoom,
     lineColor,
     periods,
     values,
@@ -159,10 +192,10 @@ export default function FeatureLineChart({
   return (
     <div className="chart-container">
       <div className="chart-title">
-        <span>{title}</span>
+        <span className="chart-series-title"><i className="chart-series-dot" style={{ background: lineColor }} aria-hidden="true" />{title}</span>
         <span className="tag">{avgLabel} {avgDisplay ?? (Number.isInteger(avg) ? avg : avg.toFixed(2))}</span>
       </div>
-      <div ref={boxRef} className="chart-box" />
+      <div ref={boxRef} className="chart-box" role="img" aria-label={`${title}，按开奖期号排列的${yName}折线图`} />
     </div>
   );
 }

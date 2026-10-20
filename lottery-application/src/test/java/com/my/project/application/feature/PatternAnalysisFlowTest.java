@@ -3,16 +3,14 @@ package com.my.project.application.feature;
 import com.my.project.application.report.LotteryReportService;
 
 import com.my.project.llm.bo.*;
-import com.my.project.llm.service.*;
 import com.my.project.infrastructure.persistence.entity.HistoryRecord;
 import com.my.project.application.config.LotteryModelProperties;
 import com.my.project.application.feature.cache.LotteryAnalysisMultiLevelCache;
 import com.my.project.application.feature.impl.LotteryFeatureAnalysisServiceImpl;
+import com.my.project.application.feature.support.IndexFeatureForecaster;
 import com.my.project.application.feature.support.PatternFeatureAnalysisSupport;
 import com.my.project.application.history.HistoryRecordService;
-import com.my.project.application.predict.PredictCacheService;
 import com.my.project.application.report.ReportFileIndexService;
-import com.my.project.application.selection.SmartSelectService;
 import com.my.project.application.support.analyse.ColdHotAnalysisUtils;
 import com.my.project.application.support.analyse.KillBallUtils;
 import org.junit.jupiter.api.Test;
@@ -35,8 +33,7 @@ class PatternAnalysisFlowTest {
     private LotteryFeatureAnalysisServiceImpl service() {
         var config = new LotteryModelProperties(); config.setPath(directory.toString());
         var service = spy(new LotteryFeatureAnalysisServiceImpl(history, support,
-            mock(LotteryAdjustService.class), mock(PredictCacheService.class), mock(SmartSelectService.class),
-            cache, new LotteryReportService(config, files)));
+            cache, new LotteryReportService(config, files), mock(IndexFeatureForecaster.class)));
         ReflectionTestUtils.setField(service, "analysisEngine", "llm-pattern");
         return service;
     }
@@ -63,7 +60,7 @@ class PatternAnalysisFlowTest {
             verify(service, never()).forecastFeaturesByIndex(anyList(), anyList());
             String endpoint = cn.hutool.crypto.digest.DigestUtil
                 .md5Hex("https://dashscope.aliyuncs.com/compatible-mode").substring(0, 12);
-            verify(cache).get(eq("feature.analysis.cache:pattern-v7:llm-pattern:bailian:qwen-flash:" + endpoint + ":P120:30"), any());
+            verify(cache).get(eq("feature.analysis.cache:pattern-v10:llm-pattern:bailian:qwen-flash:" + endpoint + ":P120:30"), any());
             verify(history).getRecordsEndingAt("P120", 100000);
 
             ReflectionTestUtils.setField(service, "analysisEngine", "java");
@@ -71,7 +68,7 @@ class PatternAnalysisFlowTest {
             doReturn(forecast).when(service).forecastFeaturesByIndex(anyList(), eq(records));
             when(support.adaptJava(forecast, records)).thenReturn(items("OK"));
             service.analyzeLatest(30);
-            verify(cache).get(eq("feature.analysis.cache:pattern-v7:java:P120:30"), any());
+            verify(cache).get(eq("feature.analysis.cache:pattern-v10:java:P120:30"), any());
         }
     }
 

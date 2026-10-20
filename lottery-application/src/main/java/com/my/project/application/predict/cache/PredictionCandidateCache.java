@@ -11,13 +11,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.NavigableMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 /**
@@ -55,6 +59,24 @@ public class PredictionCandidateCache {
 
     public static PredictionCandidateCache getInstance() {
         return INSTANCE;
+    }
+
+    public List<String> sampleKeys(Predicate<String> eligible, int size) {
+        if (size <= 0) return List.of();
+        var sample = new ArrayList<String>(size);
+        long seen = 0;
+        // 蓄水池抽样不复制缓存键，也不解压不需要的预测结果。
+        for (String key : cache.asMap().keySet()) {
+            if (!eligible.test(key)) continue;
+            seen++;
+            if (sample.size() < size) {
+                sample.add(key);
+            } else {
+                long index = ThreadLocalRandom.current().nextLong(seen);
+                if (index < size) sample.set((int) index, key);
+            }
+        }
+        return List.copyOf(sample);
     }
 
     public synchronized void put(String key, double score, byte[] compressedData) {

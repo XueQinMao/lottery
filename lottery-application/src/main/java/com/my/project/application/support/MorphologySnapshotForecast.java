@@ -4,6 +4,8 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.my.project.llm.bo.FeatureForecastBo.FeatureForecastItem;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -134,12 +136,7 @@ public final class MorphologySnapshotForecast {
             .filter(MorphologySnapshotForecast::eligibleForValue)
 //            .filter(s -> !isExcluded(s.ratio, excluded))
             .toList();
-        BucketScore top = eligible.isEmpty()
-            ? scores.stream().filter(s -> s.currentOmission > 0 && !s.rare && !isExcluded(s.ratio, excluded))
-                .findFirst()
-                .orElseGet(() -> scores.stream().filter(s -> !isExcluded(s.ratio, excluded))
-                    .findFirst().orElse(scores.getFirst()))
-            : eligible.getFirst();
+        BucketScore top = selectFallback(eligible, scores, excluded);
         String value = maybeMergeAdjacent(feature, top, eligible.isEmpty() ? scores : eligible, excluded);
         List<String> alternatives = mergeAlternatives(feature, null, top, eligible, scores, null, value, excluded);
         FeatureForecastItem item = new FeatureForecastItem();
@@ -185,21 +182,16 @@ public final class MorphologySnapshotForecast {
             .filter(MorphologySnapshotForecast::eligibleForValue)
             .filter(s -> !isExcluded(s.ratio, excluded))
             .toList();
-        BucketScore fallback = eligible.isEmpty()
-            ? scores.stream().filter(s -> s.currentOmission > 0 && !s.rare && !isExcluded(s.ratio, excluded))
-                .findFirst()
-                .orElseGet(() -> scores.stream().filter(s -> !isExcluded(s.ratio, excluded))
-                    .findFirst().orElse(scores.getFirst()))
-            : eligible.getFirst();
+        BucketScore fallback = selectFallback(eligible, scores, excluded);
 
         FeatureForecastItem item = llmItem == null ? new FeatureForecastItem() : llmItem;
-        String rawValue = item.getValue() == null ? "" : item.getValue().trim();
+        String rawValue = StringUtils.trimToEmpty(item.getValue());
         String llmReason = item.getReason();
         BucketScore matched = matchBucket(feature, rawValue, scores);
         String reasonPrefix = "";
         BucketScore top = matched;
         if (matched == null || forbiddenAsValue(matched) || !eligibleForValue(matched) || isExcluded(matched.ratio, excluded)) {
-            reasonPrefix = "LLM主推「" + (rawValue.isEmpty() ? "空" : rawValue) + "」不合规已替换。";
+            reasonPrefix = "LLM主推「" + StringUtils.defaultIfEmpty(rawValue, "空") + "」不合规已替换。";
             top = fallback;
         }
         String value = maybeMergeAdjacent(feature, top, eligible.isEmpty() ? scores : eligible, excluded);
@@ -207,15 +199,26 @@ public final class MorphologySnapshotForecast {
         fillItem(item, top, value, scores, alternatives);
         if (!reasonPrefix.isEmpty()) {
             item.setReason(reasonPrefix + item.getReason());
-        } else if (llmReason != null && !llmReason.isBlank()) {
+        } else if (StringUtils.isNotBlank(llmReason)) {
             item.setReason(llmReason.trim() + "。" + item.getReason());
         }
         return item;
     }
 
+    private static BucketScore selectFallback(List<BucketScore> eligible, List<BucketScore> scores,
+        Set<String> excluded) {
+        if (!eligible.isEmpty()) {
+            return eligible.getFirst();
+        }
+        return scores.stream().filter(s -> s.currentOmission > 0 && !s.rare && !isExcluded(s.ratio, excluded))
+            .findFirst()
+            .orElseGet(() -> scores.stream().filter(s -> !isExcluded(s.ratio, excluded))
+                .findFirst().orElse(scores.getFirst()));
+    }
+
     static List<BucketScore> scoreAll(JSONObject root) {
         JSONArray options = root.getJSONArray("ratioOptions");
-        if (options == null || options.isEmpty()) {
+        if (CollectionUtils.isEmpty(options)) {
             throw new IllegalArgumentException("形态快照缺少 ratioOptions");
         }
         double maxPrior = 0;
@@ -259,11 +262,7 @@ public final class MorphologySnapshotForecast {
 
         double predictedGap = estimatePredictedGap(recentGaps, rhythmGaps,
             "stable".equals(gapTrend) ? "stable" : intervalTrend, drought, prior, avgOmission);
-        if ("heating".equals(indexDiff.trend()) && !drought.outlierLast()) {
-            predictedGap = Math.max(1, predictedGap * 0.85);
-        } else if ("cooling".equals(indexDiff.trend()) && currentOmission > 0 && !reboundWindow) {
-            predictedGap = Math.min(80, predictedGap * 1.15);
-        }
+        predictedGap = adjustGapForIndexTrend(predictedGap, indexDiff.trend(), currentOmission, drought, reboundWindow);
         if (clusterContinue) {
             predictedGap = Math.max(1, Math.min(predictedGap, 2));
         }
@@ -285,19 +284,12 @@ public final class MorphologySnapshotForecast {
         double indexFactor = switch (indexDiff.trend()) {
             case "heating" -> 1.08;
             case "cooling" -> reboundWindow || highPrior ? 1.0 : 0.88;
-            case "stable" -> 1.0;
             default -> 1.0;
         };
         double priorFactor = 0.20 + 0.80 * (maxPrior <= 0 ? 0 : clamp(prior / maxPrior, 0, 1));
         double score = due * indexFactor * priorFactor;
         if (currentOmission == 0) {
-            if (clusterContinue) {
-                score *= 1.18;
-            } else if (highPrior) {
-                score *= 0.95;
-            } else {
-                score *= drought.outlierLast() && drought.canCluster() ? 0.55 : 0.28;
-            }
+            score *= justDrawnFactor(clusterContinue, highPrior, drought);
         }
         if (reboundWindow) {
             score *= 1.15;
@@ -311,19 +303,48 @@ public final class MorphologySnapshotForecast {
         if (rare || hitCount == 0) {
             score *= 0.2;
         }
-        if (avgOmission > 1e-6 && currentOmission > 0) {
-            double rel = currentOmission / Math.max(avgOmission, predictedGap);
-            if (rel < 0.35 && !reboundWindow) {
-                score *= 0.62;
-            } else if (rel > 2.2 && coolingBlocked) {
-                score *= 0.55;
-            }
-        }
+        score = adjustScoreForRelativeOmission(score, currentOmission, avgOmission, predictedGap,
+            reboundWindow, coolingBlocked);
 
         return new BucketScore(ratio, score, prior, gapTrend, predictedGap, currentOmission, eta,
             dueWindow, recentGaps, reboundWindow, clusterContinue, heatBroken, rare, sampleOk,
             indexTail, hitPulse, indexDiff.trend(), indexDiff.deltaGap(), indexDiff.recentDeltas(),
             highPrior);
+    }
+
+    private static double adjustGapForIndexTrend(double gap, String trend, int currentOmission,
+        DroughtContext drought, boolean reboundWindow) {
+        if ("heating".equals(trend) && !drought.outlierLast()) {
+            return Math.max(1, gap * 0.85);
+        }
+        if ("cooling".equals(trend) && currentOmission > 0 && !reboundWindow) {
+            return Math.min(80, gap * 1.15);
+        }
+        return gap;
+    }
+
+    private static double justDrawnFactor(boolean clusterContinue, boolean highPrior, DroughtContext drought) {
+        if (clusterContinue) {
+            return 1.18;
+        }
+        if (highPrior) {
+            return 0.95;
+        }
+        return drought.outlierLast() && drought.canCluster() ? 0.55 : 0.28;
+    }
+
+    private static double adjustScoreForRelativeOmission(double score, int currentOmission, double avgOmission,
+        double predictedGap, boolean reboundWindow, boolean coolingBlocked) {
+        if (avgOmission > 1e-6 && currentOmission > 0) {
+            double relativeOmission = currentOmission / Math.max(avgOmission, predictedGap);
+            if (relativeOmission < 0.35 && !reboundWindow) {
+                return score * 0.62;
+            }
+            if (relativeOmission > 2.2 && coolingBlocked) {
+                return score * 0.55;
+            }
+        }
+        return score;
     }
 
     static boolean eligibleForValue(BucketScore b) {
@@ -380,7 +401,7 @@ public final class MorphologySnapshotForecast {
     }
 
     static boolean heatBroken(int currentOmission, List<Integer> allGaps, String gapTrend) {
-        if (currentOmission <= 0 || allGaps == null || allGaps.isEmpty()) {
+        if (currentOmission <= 0 || CollectionUtils.isEmpty(allGaps)) {
             return false;
         }
         int lastGap = allGaps.getLast();
@@ -408,8 +429,8 @@ public final class MorphologySnapshotForecast {
 
     static double estimatePredictedGap(List<Integer> recentGaps, List<Integer> rhythmGaps,
         String gapTrend, DroughtContext drought, double prior, double avgOmission) {
-        List<Integer> base = (rhythmGaps != null && !rhythmGaps.isEmpty()) ? rhythmGaps : recentGaps;
-        if (base == null || base.isEmpty()) {
+        List<Integer> base = CollectionUtils.isNotEmpty(rhythmGaps) ? rhythmGaps : recentGaps;
+        if (CollectionUtils.isEmpty(base)) {
             double theory = prior > 1e-6 ? 1.0 / prior : Math.max(avgOmission, 8);
             return clamp(theory, 2, 80);
         }
@@ -536,43 +557,14 @@ public final class MorphologySnapshotForecast {
     }
 
     private static BucketScore matchBucket(String feature, String value, List<BucketScore> scores) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        String v = value.trim();
-        for (BucketScore s : scores) {
-            if (v.equals(s.ratio)) {
-                return s;
-            }
-        }
-        if (v.matches("\\d+-\\d+") && feature != null && MERGEABLE_FEATURES.contains(feature)) {
-            int dash = v.indexOf('-');
-            try {
-                int low = Integer.parseInt(v.substring(0, dash));
-                int high = Integer.parseInt(v.substring(dash + 1));
-                BucketScore best = null;
-                for (BucketScore s : scores) {
-                    try {
-                        int n = Integer.parseInt(s.ratio);
-                        if (n >= low && n <= high && (best == null || s.score > best.score)) {
-                            best = s;
-                        }
-                    } catch (NumberFormatException ignored) {
-                        // skip
-                    }
-                }
-                return best;
-            } catch (NumberFormatException ignored) {
-                return null;
-            }
-        }
-        return null;
+        boolean allowRange = feature != null && MERGEABLE_FEATURES.contains(feature);
+        return ForecastBucketMatcher.match(value, scores, allowRange, BucketScore::ratio, BucketScore::score);
     }
 
     private static List<String> mergeAlternatives(String feature, List<String> llmAlts, BucketScore top,
         List<BucketScore> eligible, List<BucketScore> scores, String rawValue, String mergedValue,
         Set<String> excluded) {
-        String cover = mergedValue == null || mergedValue.isBlank() ? top.ratio : mergedValue;
+        String cover = StringUtils.defaultIfBlank(mergedValue, top.ratio);
         List<String> alternatives = new ArrayList<>();
         double maxPrior = 0;
         for (BucketScore s : scores) {
@@ -584,7 +576,7 @@ public final class MorphologySnapshotForecast {
                 tryAddAlt(alternatives, a, cover, scores, false, excluded);
             }
         }
-        if (rawValue != null && !rawValue.isBlank()) {
+        if (StringUtils.isNotBlank(rawValue)) {
             BucketScore rejected = matchBucket(feature, rawValue, scores);
             if (rejected != null && !rejected.rare) {
                 tryAddAlt(alternatives, rejected.ratio, cover, scores, true, excluded);
@@ -614,15 +606,7 @@ public final class MorphologySnapshotForecast {
                 tryAddAlt(alternatives, s.ratio, cover, scores, true, excluded);
             }
         }
-        alternatives.removeIf(a -> coveredBy(cover, a));
-        for (BucketScore s : byPrior) {
-            if (s.rare || (maxPrior > 1e-9 && s.prior < 0.20 * maxPrior && !s.highPrior && !s.reboundWindow)) {
-                continue;
-            }
-            tryAddAlt(alternatives, s.ratio, cover, scores, false, excluded);
-        }
         ensureClosedSetAlts(feature, cover, alternatives, excluded);
-        alternatives.removeIf(a -> coveredBy(cover, a));
         return alternatives;
     }
 
@@ -638,7 +622,7 @@ public final class MorphologySnapshotForecast {
 
     private static void tryAddAlt(List<String> alternatives, String ratio, String cover,
         List<BucketScore> scores, boolean prepend, Set<String> excluded) {
-        if (ratio == null || ratio.isBlank() || coveredBy(cover, ratio) || alternatives.contains(ratio)) {
+        if (StringUtils.isBlank(ratio) || coveredBy(cover, ratio) || alternatives.contains(ratio)) {
             return;
         }
         if (isExcluded(ratio, excluded)) {
@@ -648,14 +632,10 @@ public final class MorphologySnapshotForecast {
         if (b != null && b.rare) {
             return;
         }
-        if (prepend) {
-            alternatives.add(0, ratio);
-        } else if (alternatives.size() < MAX_ALTERNATIVES) {
-            alternatives.add(ratio);
-            return;
-        } else {
+        if (!prepend && alternatives.size() >= MAX_ALTERNATIVES) {
             return;
         }
+        alternatives.add(prepend ? 0 : alternatives.size(), ratio);
         if (alternatives.size() > MAX_ALTERNATIVES) {
             alternatives.subList(MAX_ALTERNATIVES, alternatives.size()).clear();
         }
@@ -774,17 +754,9 @@ public final class MorphologySnapshotForecast {
     }
 
     private static int[] parseClosedRange(String s) {
-        if (s == null || !s.matches("\\d+-\\d+")) {
-            return null;
-        }
-        int dash = s.indexOf('-');
-        try {
-            int a = Integer.parseInt(s.substring(0, dash));
-            int b = Integer.parseInt(s.substring(dash + 1));
-            return new int[] {Math.min(a, b), Math.max(a, b)};
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        var range = ForecastBucketMatcher.parseRange(s);
+        return range == null ? null
+            : new int[] {Math.min(range.start(), range.end()), Math.max(range.start(), range.end())};
     }
 
     private static void fillItem(FeatureForecastItem item, BucketScore top, String value,
@@ -820,10 +792,10 @@ public final class MorphologySnapshotForecast {
             case "stable" -> "指数差值/间隔平稳，按节奏择时";
             default -> "指数差值样本不足";
         };
-        String gaps = top.recentGaps == null || top.recentGaps.isEmpty()
+        String gaps = CollectionUtils.isEmpty(top.recentGaps)
             ? "无"
             : top.recentGaps.stream().map(String::valueOf).collect(Collectors.joining(","));
-        String deltas = top.recentIndexDeltas == null || top.recentIndexDeltas.isEmpty()
+        String deltas = CollectionUtils.isEmpty(top.recentIndexDeltas)
             ? "无"
             : top.recentIndexDeltas.stream()
                 .map(d -> String.format(Locale.ROOT, "%.3f", d))
@@ -887,7 +859,7 @@ public final class MorphologySnapshotForecast {
     }
 
     private static double mean(List<Double> values) {
-        if (values == null || values.isEmpty()) {
+        if (CollectionUtils.isEmpty(values)) {
             return 0;
         }
         double sum = 0;
@@ -919,7 +891,7 @@ public final class MorphologySnapshotForecast {
     }
 
     private static <T> List<T> tail(List<T> list, int n) {
-        if (list == null || list.isEmpty()) {
+        if (CollectionUtils.isEmpty(list)) {
             return List.of();
         }
         int from = Math.max(0, list.size() - n);
@@ -927,7 +899,7 @@ public final class MorphologySnapshotForecast {
     }
 
     private static List<Integer> toIntList(JSONArray arr) {
-        if (arr == null || arr.isEmpty()) {
+        if (CollectionUtils.isEmpty(arr)) {
             return List.of();
         }
         List<Integer> out = new ArrayList<>(arr.size());
@@ -938,7 +910,7 @@ public final class MorphologySnapshotForecast {
     }
 
     private static List<Double> toDoubleList(JSONArray arr) {
-        if (arr == null || arr.isEmpty()) {
+        if (CollectionUtils.isEmpty(arr)) {
             return List.of();
         }
         List<Double> out = new ArrayList<>(arr.size());

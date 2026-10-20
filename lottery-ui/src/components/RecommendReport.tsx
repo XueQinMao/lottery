@@ -1,371 +1,264 @@
 "use client";
 
-import PatternAnalysisReport from "@/components/PatternAnalysisReport";
-
-import { useEffect, useState } from "react";
-import { Check, Copy } from "@phosphor-icons/react";
-import type { FeatureForecast } from "@/types/llm-analysis";
+import { useEffect, useRef, useState } from "react";
+import { Check, Copy, X } from "@phosphor-icons/react";
 import type {
   AdjustedTicket,
-  ComplexTicket,
-  FeatureHit,
+  FeatureCoverage,
   FeatureHitSummary,
-  FinalRecommendation,
   LotteryAdjustResp,
-  SingleTicket,
 } from "@/types/llm-recommend";
 
-function pad(n: number) {
-  return String(n).padStart(2, "0");
+interface TicketRow {
+  title: string;
+  category?: AdjustedTicket["category"];
+  reds: number[];
+  blues: number[];
+  reason?: string;
+  original?: { reds: number[]; blues: number[] };
+  bets?: number;
+  hits?: FeatureHitSummary;
+  coverage?: FeatureCoverage[];
 }
 
-function formatTicketText(
-  reds?: number[],
-  blue?: number,
-  blues?: number[],
-) {
-  const redText = (reds ?? []).map(pad).join(" ");
-  const blueNums = blues ?? (blue != null ? [blue] : []);
-  const blueText = blueNums.map(pad).join(" ");
-  if (!redText) {
-    return blueText;
-  }
-  if (!blueText) {
-    return redText;
-  }
-  return `${redText} + ${blueText}`;
+const HIT_LABEL = { MAIN: "命中主推", ALT: "命中备选", MISS: "未命中" };
+const TICKET_LABEL = { OPTIMIZED: "优化号码", RECOMMENDED: "推荐号码", FULL_MATCH: "全特征命中" };
+const pad = (number: number) => String(number).padStart(2, "0");
+
+function CombinedBalls({ reds, blues }: Pick<TicketRow, "reds" | "blues">) {
+  return (
+    <div className="recommend-number-groups">
+      <div className="chip-row" role="group" aria-label="红球">
+        {reds.map((number) => <span className="chip chip-red" key={number}>{pad(number)}</span>)}
+      </div>
+      <div className="chip-row" role="group" aria-label="蓝球">
+        {blues.map((number) => <span className="chip chip-blue" key={number}>{pad(number)}</span>)}
+      </div>
+    </div>
+  );
 }
 
-async function copyText(text: string) {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-  const ta = document.createElement("textarea");
-  ta.value = text;
-  ta.setAttribute("readonly", "");
-  ta.style.position = "fixed";
-  ta.style.left = "-9999px";
-  document.body.appendChild(ta);
-  ta.select();
-  document.execCommand("copy");
-  document.body.removeChild(ta);
-}
-
-function CopyTicketButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
+function CopyTicketButton({ ticket }: { ticket: TicketRow }) {
+  const [feedback, setFeedback] = useState<"copied" | "failed" | null>(null);
+  const text = [ticket.reds, ticket.blues].map((balls) => balls.map(pad).join(" ")).filter(Boolean).join(" + ");
 
   useEffect(() => {
-    if (!copied) {
-      return;
-    }
-    const timer = window.setTimeout(() => setCopied(false), 1600);
+    if (!feedback) return;
+    const timer = window.setTimeout(() => setFeedback(null), 2200);
     return () => window.clearTimeout(timer);
-  }, [copied]);
+  }, [feedback]);
 
-  if (!text) {
-    return null;
-  }
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setFeedback("copied");
+    } catch {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      document.body.append(textarea);
+      textarea.select();
+      try {
+        setFeedback(document.execCommand("copy") ? "copied" : "failed");
+      } catch {
+        setFeedback("failed");
+      } finally {
+        textarea.remove();
+      }
+    }
+  };
 
   return (
-    <button
-      type="button"
-      className={`copy-ticket-btn ${copied ? "is-copied" : ""}`}
-      onClick={() => {
-        void copyText(text)
-          .then(() => setCopied(true))
-          .catch(() => undefined);
-      }}
-      aria-label={copied ? "已复制号码组" : `复制号码组 ${text}`}
-    >
-      {copied ? (
-        <Check size={14} weight="bold" aria-hidden="true" />
-      ) : (
-        <Copy size={14} weight="bold" aria-hidden="true" />
-      )}
-      {copied ? "已复制" : "复制"}
+    <button type="button" className={`copy-ticket-btn ${feedback === "copied" ? "is-copied" : ""}`}
+      onClick={() => void copy()} disabled={!text}>
+      {feedback === "copied" ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+      <span aria-live="polite">{feedback === "copied" ? "已复制" : feedback === "failed" ? "复制失败" : "复制"}</span>
     </button>
   );
 }
 
-function hasItems<T>(arr?: T[] | null): arr is T[] {
-  return Array.isArray(arr) && arr.length > 0;
-}
-
-function BallChip({
-  n,
-  tone = "red",
-}: {
-  n: number;
-  tone?: "red" | "blue";
-}) {
-  return <span className={`chip chip-${tone}`}>{pad(n)}</span>;
-}
-
-function BallList({
-  reds,
-  blue,
-  blues,
-}: {
-  reds?: number[];
-  blue?: number;
-  blues?: number[];
-}) {
-  return (
-    <div className="recommend-balls">
-      <div className="chip-row">
-        {hasItems(reds)
-          ? reds.map((n) => <BallChip key={`r-${n}`} n={n} tone="red" />)
-          : null}
-        {blue != null ? (
-          <BallChip key={`b-${blue}`} n={blue} tone="blue" />
-        ) : null}
-        {hasItems(blues)
-          ? blues.map((n) => <BallChip key={`bs-${n}`} n={n} tone="blue" />)
-          : null}
-      </div>
-      <CopyTicketButton text={formatTicketText(reds, blue, blues)} />
-    </div>
-  );
-}
-
-function HitChip({ hit }: { hit: FeatureHit }) {
-  const tone = (hit.hitType ?? "MISS").toLowerCase();
-  const extra =
-    hit.hitType === "MAIN"
-      ? hit.actual || "-"
-      : hit.hitType === "ALT"
-        ? `${hit.actual || "-"} · 主推 ${hit.mainValue || "-"}`
-        : `${hit.actual || "-"} ≠ ${hit.mainValue || "-"}`;
-  const altText = hasItems(hit.alternatives)
-    ? `备选 ${hit.alternatives.join("、")}`
-    : "";
-  return (
-    <span
-      className={`hit-chip hit-chip-${tone}`}
-      title={[hit.label, extra, altText].filter(Boolean).join("；")}
-    >
-      <strong>{hit.label}</strong>
-      <span>{extra}</span>
-    </span>
-  );
-}
-
-function HitGroup({
-  title,
-  items,
-  tone,
-}: {
-  title: string;
-  items: FeatureHit[];
-  tone: "main" | "alt" | "miss";
-}) {
-  return (
-    <div className={`hit-group hit-group-${tone}`}>
-      <div className="kv-label">
-        {title}
-        <span className="hit-count">{items.length}</span>
-      </div>
-      {items.length === 0 ? (
-        <span className="muted">无</span>
-      ) : (
-        <div className="chip-row">
-          {items.map((hit) => (
-            <HitChip key={hit.code || hit.label} hit={hit} />
-          ))}
+function FeatureDetails({ ticket }: { ticket: TicketRow }) {
+  const hits = ticket.hits?.hits;
+  if (hits?.length) {
+    return (
+      <section>
+        <h3>特征命中</h3>
+        <div className="hit-summary">
+          <span className="hit-kpi main">主推 {ticket.hits?.mainHitCount ?? 0}</span>
+          <span className="hit-kpi alt">备选 {ticket.hits?.altHitCount ?? 0}</span>
+          <span className="hit-kpi miss">未中 {ticket.hits?.missCount ?? 0}</span>
         </div>
-      )}
-    </div>
-  );
-}
-
-function FeatureHitBoard({ summary }: { summary?: FeatureHitSummary }) {
-  if (!summary || !hasItems(summary.hits)) {
-    return <p className="muted">暂无形态对照（需有效的 6 红 + 1 蓝）。</p>;
-  }
-  const main = summary.hits.filter((h) => h.hitType === "MAIN");
-  const alt = summary.hits.filter((h) => h.hitType === "ALT");
-  const miss = summary.hits.filter((h) => h.hitType === "MISS");
-  return (
-    <div className="hit-board">
-      <div className="hit-summary" aria-label="形态命中汇总">
-        <span className="hit-kpi main">
-          主推 {summary.mainHitCount ?? main.length}
-        </span>
-        <span className="hit-kpi alt">
-          备选 {summary.altHitCount ?? alt.length}
-        </span>
-        <span className="hit-kpi miss">
-          未中 {summary.missCount ?? miss.length}
-        </span>
-      </div>
-      <div className="hit-groups">
-        <HitGroup title="命中主推" items={main} tone="main" />
-        <HitGroup title="命中备选" items={alt} tone="alt" />
-        <HitGroup title="未命中" items={miss} tone="miss" />
-      </div>
-    </div>
-  );
-}
-
-const FORECAST_ROWS: { key: keyof FeatureForecast; label: string }[] = [
-  { key: "oddEven", label: "奇偶比" },
-  { key: "bigSmall", label: "大小比" },
-  { key: "primeComposite", label: "质合比" },
-  { key: "ratio012", label: "012路比" },
-  { key: "span", label: "跨度" },
-  { key: "sumRange", label: "和值区间" },
-  { key: "sumTail", label: "和值尾数" },
-  { key: "threeZone", label: "三区比" },
-  { key: "zone1Count", label: "一区个数" },
-  { key: "zone2Count", label: "二区个数" },
-  { key: "zone3Count", label: "三区个数" },
-  { key: "blueOddEven", label: "蓝球奇偶" },
-  { key: "blueBigSmall", label: "蓝球大小" },
-  { key: "blueBigSmallOddEven", label: "蓝球大小奇偶" },
-  { key: "blueRatio012", label: "蓝球012路" },
-];
-
-function ForecastStrip({ data }: { data?: FeatureForecast }) {
-  if (!data) return null;
-  return (
-    <section className="section report-card report-span-full">
-      <h2>形态目标（对照基准）</h2>
-      {data.basis ? <p className="basis">{data.basis}</p> : null}
-      <div className="chart-container">
         <div className="table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>形态</th>
-                <th>主推</th>
-                <th>备选</th>
-              </tr>
-            </thead>
+          <table className="data-table recommend-features-table">
+            <thead><tr><th>特征</th><th>实际值</th><th>主推 / 备选</th><th>结果</th></tr></thead>
             <tbody>
-              {FORECAST_ROWS.map((row) => {
-                const item = data[row.key];
-                if (!item || typeof item === "string") return null;
-                return (
-                  <tr key={row.key}>
-                    <td>{row.label}</td>
-                    <td>
-                      <strong>{item.value || "-"}</strong>
-                    </td>
-                    <td>{item.alternatives?.join("、") || "-"}</td>
-                  </tr>
-                );
-              })}
+              {hits.map((hit) => (
+                <tr key={hit.code}>
+                  <th scope="row">{hit.label}</th>
+                  <td>{hit.actual}</td>
+                  <td>{[hit.mainValue, ...(hit.alternatives ?? [])].filter(Boolean).join("、")}</td>
+                  <td>{HIT_LABEL[hit.hitType ?? "MISS"]}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
+      </section>
+    );
+  }
+  if (ticket.coverage?.length) {
+    return (
+      <section>
+        <h3>复式组合覆盖</h3>
+        <p className="muted">逐注对照预测值，同一注可匹配多项特征。</p>
+        <div className="table-wrap">
+          <table className="data-table recommend-features-table">
+            <thead><tr><th>特征</th><th>主推 / 备选</th><th>主推注数</th><th>备选注数</th></tr></thead>
+            <tbody>
+              {ticket.coverage.map((feature) => (
+                <tr key={feature.code}>
+                  <th scope="row">{feature.label}</th>
+                  <td>{[feature.mainValue, ...feature.alternatives].join("、")}</td>
+                  <td>{feature.mainHitBets}</td>
+                  <td>{feature.altHitBets}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    );
+  }
+  return <p className="muted">暂无特征对照记录。</p>;
+}
+
+function TicketDetail({ ticket, onClose }: { ticket: TicketRow; onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (!dialog.current?.open) dialog.current?.showModal();
+  }, []);
+  return (
+    <dialog className="feature-detail-dialog" ref={dialog} onClose={onClose} aria-labelledby="recommend-detail-title">
+      <div className="feature-detail-header">
+        <h2 id="recommend-detail-title">{ticket.title} · 推荐详情</h2>
+        <button className="ghost-btn feature-detail-close" type="button" aria-label="关闭详情"
+          onClick={() => dialog.current?.close()}><X size={20} aria-hidden="true" /></button>
       </div>
-    </section>
+      <div className="feature-detail-body">
+        <CombinedBalls reds={ticket.reds} blues={ticket.blues} />
+        {ticket.original && <section>
+          <h3>{ticket.category === "OPTIMIZED" ? "优化前号码" : "缓存原号码"}</h3>
+          <CombinedBalls {...ticket.original} />
+        </section>}
+        <section><h3>推荐理由</h3><p>{ticket.reason || "暂无推荐理由。"}</p></section>
+        <FeatureDetails ticket={ticket} />
+      </div>
+    </dialog>
   );
 }
 
-function SingleCard({
-  title,
-  reds,
-  blue,
-  reason,
-  summary,
-}: {
-  title: string;
-  reds?: number[];
-  blue?: number;
-  reason?: string;
-  summary?: FeatureHitSummary;
-}) {
+function TicketListItem({ ticket, onDetail }: { ticket: TicketRow; onDetail: () => void }) {
+  const label = ticket.category ? TICKET_LABEL[ticket.category] : ticket.original && "缓存调优";
   return (
-    <div className="chart-container ticket-card">
-      <div className="chart-title">
-        <span>{title}</span>
+    <li className="recommend-ticket-row">
+      <div className="recommend-ticket-label">
+        <strong className={ticket.bets != null ? "whitespace-nowrap" : undefined}>
+          {ticket.title}
+          {ticket.bets != null && <span className="muted font-normal">（{ticket.bets} 注）</span>}
+        </strong>
+        {label && <span className="recommend-ticket-badge" data-category={ticket.category}>{label}</span>}
       </div>
-      <BallList reds={reds} blue={blue} />
-      {reason ? <p className="basis">{reason}</p> : null}
-      <FeatureHitBoard summary={summary} />
-    </div>
-  );
-}
-
-function ComplexCard({ ticket }: { ticket?: ComplexTicket }) {
-  if (!ticket) return null;
-  return (
-    <div className="chart-container ticket-card">
-      <div className="chart-title">
-        <span>{ticket.name || "复式"}</span>
-        {ticket.totalBets != null ? (
-          <span className="tag">{ticket.totalBets} 注</span>
-        ) : null}
+      <CombinedBalls reds={ticket.reds} blues={ticket.blues} />
+      <div className="recommend-ticket-actions">
+        <CopyTicketButton ticket={ticket} />
+        <button className="copy-ticket-btn" type="button" onClick={onDetail}>查看详情</button>
       </div>
-      <BallList reds={ticket.redBalls} blues={ticket.blueBalls} />
-      {ticket.basis ? <p className="basis">{ticket.basis}</p> : null}
-      <p className="muted">复式红球非 6 个，不按单式形态维对照。</p>
-    </div>
-  );
-}
-
-function FinalPackage({
-  data,
-  hits,
-}: {
-  data?: FinalRecommendation;
-  hits?: FeatureHitSummary[];
-}) {
-  if (!data) return null;
-  return (
-    <section className="section report-card report-span-full">
-      <h2>最终推荐包</h2>
-      <div className="ticket-grid">
-        {data.singleTickets?.map((t: SingleTicket, i) => (
-          <SingleCard
-            key={t.name || `final-${i}`}
-            title={t.name || `最终单式 ${i + 1}`}
-            reds={t.redBalls}
-            blue={t.blueBall}
-            reason={t.basis}
-            summary={hits?.[i]}
-          />
-        ))}
-        <ComplexCard ticket={data.complexTicket} />
-      </div>
-    </section>
+    </li>
   );
 }
 
 export default function RecommendReport({ data }: { data: LotteryAdjustResp }) {
+  const [selected, setSelected] = useState<TicketRow | null>(null);
+
+  const adjusted = (data.adjustedTickets ?? []).map((ticket, index): TicketRow => ({
+    title: `第 ${index + 1} 组`,
+    category: ticket.category,
+    reds: ticket.adjustedRedBalls ?? [],
+    blues: ticket.adjustedBlueBall == null ? [] : [ticket.adjustedBlueBall],
+    reason: ticket.reason,
+    original: ticket.originalRedBalls?.length && ticket.originalBlueBall != null
+      ? { reds: ticket.originalRedBalls, blues: [ticket.originalBlueBall] } : undefined,
+    hits: data.adjustedTicketHits?.[index],
+  }));
+  const singles = adjusted.concat((data.finalRecommendation?.singleTickets ?? []).map((ticket, index) => ({
+    title: ticket.name || `第 ${adjusted.length + index + 1} 组`,
+    reds: ticket.redBalls ?? [],
+    blues: ticket.blueBall == null ? [] : [ticket.blueBall],
+    reason: ticket.basis,
+    hits: data.finalSingleHits?.[index],
+  })));
+  const complex = data.finalRecommendation?.complexTicket;
+  const trendImages = data.numberTrendImages ?? [];
+  const trendCandidates = data.numberTrendObservations ?? [];
+  const redCandidates = trendCandidates.filter((item) => item.ball === "RED").map((item) => pad(item.number));
+  const blueCandidates = trendCandidates.filter((item) => item.ball === "BLUE").map((item) => pad(item.number));
+  const complexRow = complex && {
+    title: "复式",
+    reds: complex.redBalls ?? [],
+    blues: complex.blueBalls ?? [],
+    reason: complex.basis,
+    bets: complex.totalBets,
+    coverage: data.complexHits,
+  };
+
   return (
-    <div className="report-bento">
-      <PatternAnalysisReport features={data.featureAnalysis} />
-      {data.conclusion ? (
-        <section className="section report-card report-span-full">
-          <h2>综合说明</h2>
-          <p className="basis">{data.conclusion}</p>
-        </section>
+    <section className="recommend-results" aria-label="推荐结果">
+      <header className="recommend-results-header">
+        <h2>推荐结果</h2>
+        <p className="muted">{[data.targetPeriod && `${data.targetPeriod} 期`, `${singles.length} 组单式`, complexRow && "1 组复式"].filter(Boolean).join(" · ")}</p>
+      </header>
+      {trendImages.length > 0 ? (
+        <details className="recommend-trend-images">
+          <summary>查看模型输入截图</summary>
+          {trendImages.map(({ code, dataUrl }) => {
+            const label = code === "red" ? "红球走势图" : "蓝球走势图";
+            return (
+              <figure className="recommend-trend-image" key={code}>
+                <figcaption>
+                  <span>{label}</span>
+                  <a className="copy-ticket-btn" href={dataUrl}
+                    download={`number-trend-${data.sourcePeriod ?? data.targetPeriod ?? "input"}-${code}.png`}>
+                    下载 PNG
+                  </a>
+                </figcaption>
+                <div className="recommend-trend-image-scroll" tabIndex={0} role="region" aria-label={label}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={dataUrl} alt={label} loading="lazy" />
+                </div>
+              </figure>
+            );
+          })}
+        </details>
       ) : null}
-      <FinalPackage
-        data={data.finalRecommendation}
-        hits={data.finalSingleHits}
-      />
-      {hasItems(data.adjustedTickets) ? (
-        <section className="section report-card report-span-full">
-          <h2>推荐号码组（{data.adjustedTickets.length}）</h2>
-          <div className="ticket-grid">
-            {data.adjustedTickets.map((t: AdjustedTicket, i) => (
-              <SingleCard
-                key={t.id || `adj-${i}`}
-                title={t.id || `推荐组 ${i + 1}`}
-                reds={t.adjustedRedBalls}
-                blue={t.adjustedBlueBall}
-                reason={t.reason}
-                summary={data.adjustedTicketHits?.[i]}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
-      <ForecastStrip data={data.featureForecast} />
-    </div>
+      {data.numberTrendObservations && (
+        trendCandidates.length > 0 ? (
+          <details className="status">
+            <summary>查看走势图候选</summary>
+            <ul className="recommend-trend-candidates">
+              <li>红球 {redCandidates.join("、") || "暂无候选"}</li>
+              {blueCandidates.length > 0 && <li>蓝球 {blueCandidates.join("、")}</li>}
+            </ul>
+          </details>
+        ) : <div className="status">号码走势图暂无下期红球候选，本次按特征生成。</div>
+      )}
+      <ul className="recommend-ticket-list" aria-label="单式号码">
+        {singles.map((ticket, index) => <TicketListItem key={index} ticket={ticket} onDetail={() => setSelected(ticket)} />)}
+      </ul>
+      {complexRow && <ul className="recommend-ticket-list recommend-complex-list" aria-label="复式号码">
+        <TicketListItem ticket={complexRow} onDetail={() => setSelected(complexRow)} />
+      </ul>}
+      {selected && <TicketDetail ticket={selected} onClose={() => setSelected(null)} />}
+    </section>
   );
 }

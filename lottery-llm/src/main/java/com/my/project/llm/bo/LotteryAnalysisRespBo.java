@@ -13,7 +13,7 @@ import java.util.List;
  * <p>以下为旧结构说明：
  * <ul>
      *     <li>{@code featureForecast}：下一期形态目标（engine=java 或 llm）</li>
- *     <li>{@code killNumbers}：硬杀清单</li>
+ *     <li>{@code killNumbers}：杀号规则参考清单，推荐时不作为禁选条件</li>
  *     <li>{@code coldHotAnalysis}：冷热温分档</li>
  *     <li>{@code predictedThreeZoneRatio}：三区比预测</li>
  *     <li>{@code trendAnalysis}：趋势相位补号倾向</li>
@@ -26,6 +26,9 @@ import java.util.List;
 @Data
 @Builder
 public class LotteryAnalysisRespBo {
+
+    /** 三区走势图多模态试点；与旧的全特征推荐报告独立。 */
+    private ZoneTrendAnalysisBo zoneTrendAnalysis;
 
     private List<PatternFeatureAnalysisBo> featureAnalysis;
     /** 大模型分支固定最近30期，最旧到最新；Java及旧报告按实际记录读取。 */

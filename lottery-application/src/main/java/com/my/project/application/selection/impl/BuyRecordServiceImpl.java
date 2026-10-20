@@ -63,20 +63,8 @@ public class BuyRecordServiceImpl implements BuyRecordService {
                 .createTime(now)
                 .build()));
 
-        // 最终推荐包：2 单式 + 1 复式
         LotteryAdjustRespBo.FinalRecommendation finalRec = adjustRespBo.getFinalRecommendation();
         if (finalRec != null) {
-            CollectionUtils.emptyIfNull(finalRec.getSingleTickets()).forEach(s ->
-                buyRecords.add(BuyRecord.builder()
-                    .type(type.name())
-                    .openDate(openDate)
-                    .redBalls(joinBalls(s.getRedBalls()))
-                    .blueBalls(toBallStr(s.getBlueBall()))
-                    .totalBets(s.getTotalBets() == null ? 1 : s.getTotalBets())
-                    .reason(s.getBasis())
-                    .createTime(now)
-                    .build()));
-
             LotteryAdjustRespBo.ComplexTicket complex = finalRec.getComplexTicket();
             if (complex != null) {
                 buyRecords.add(BuyRecord.builder()

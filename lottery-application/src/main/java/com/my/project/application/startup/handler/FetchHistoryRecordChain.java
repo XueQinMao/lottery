@@ -2,7 +2,7 @@ package com.my.project.application.startup.handler;
 
 import com.my.project.application.event.HistoryCompleteEvent;
 import com.my.project.application.selection.model.StartupContextBo;
-import com.my.project.application.history.HistoryRecordService;
+import com.my.project.application.history.DrawSynchronizationService;
 import org.springframework.stereotype.Component;
 
 /**
@@ -14,10 +14,10 @@ import org.springframework.stereotype.Component;
 @Component
 public class FetchHistoryRecordChain extends AbstractStartupChain {
 
-    private final HistoryRecordService historyRecordService;
+    private final DrawSynchronizationService synchronization;
 
-    public FetchHistoryRecordChain(HistoryRecordService historyRecordService) {
-        this.historyRecordService = historyRecordService;
+    public FetchHistoryRecordChain(DrawSynchronizationService synchronization) {
+        this.synchronization = synchronization;
     }
 
     @Override
@@ -28,7 +28,7 @@ public class FetchHistoryRecordChain extends AbstractStartupChain {
     @Override
     protected void doHandle(StartupContextBo<Object> context) {
         try {
-            historyRecordService.syncHistoryRecords();
+            synchronization.synchronize();
             HistoryCompleteEvent.of(this).publish();
         } catch (Exception e) {
             context.setSuccess(false);

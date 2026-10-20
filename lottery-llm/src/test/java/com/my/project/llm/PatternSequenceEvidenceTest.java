@@ -50,4 +50,41 @@ class PatternSequenceEvidenceTest {
         assertThrows(IllegalArgumentException.class, () -> PatternAnalysisParser.parse(
             response.replace("下一期观察交替延续的假设。", "大号连续出现两次，所以继续大。"), req));
     }
+
+    @Test
+    void suppliesNonOverlappingWindowsAndOnlyCompletedEarlierMatches() {
+        var req = request();
+        var context = JSON.parseObject(PatternSequenceEvidence.context(req));
+        assertEquals("P26", context.getJSONObject("recent5").getString("startPeriod"));
+        assertEquals("P30", context.getJSONObject("recent5").getString("endPeriod"));
+        assertEquals("P21", context.getJSONObject("preceding5").getString("startPeriod"));
+        assertEquals("P25", context.getJSONObject("preceding5").getString("endPeriod"));
+        assertEquals("P11", context.getJSONObject("preceding10").getString("startPeriod"));
+        var similar = context.getJSONObject("earlierSimilarFragmentsAndObservedNextValue");
+        for (int width : List.of(2, 3, 4)) {
+            var examples = similar.getJSONArray("suffix" + width);
+            assertTrue(examples.size() <= 3);
+            for (int i = 0; i < examples.size(); i++) {
+                var example = examples.getJSONObject(i);
+                int nextPosition = Integer.parseInt(example.getString("observedNextPeriod").substring(1));
+                assertTrue(nextPosition <= 30 - width);
+                assertEquals(req.getObservations().get(nextPosition - 1).getValue(), example.getString("observedNextValue"));
+                assertEquals(req.getObservations().subList(30 - width, 30).stream().map(row -> row.getValue()).toList(),
+                    example.getJSONArray("matchedValues").toJavaList(String.class));
+            }
+        }
+        assertFalse(context.containsKey("recent8ComponentsInDefinitionOrder"));
+    }
+
+    @Test
+    void decomposesRatioComponentsWithoutChangingTheirOrder() {
+        var req = request();
+        req.setCode("ratio012");
+        req.getObservations().forEach(row -> row.setValue(row.getPosition() % 2 == 0 ? "3:2:1" : "1:2:3"));
+        var context = JSON.parseObject(PatternSequenceEvidence.context(req));
+        assertEquals(List.of(1, 3, 1, 3, 1, 3, 1, 3), context.getJSONArray("recent8ComponentsInDefinitionOrder")
+            .getJSONArray(0).toJavaList(Integer.class));
+        assertEquals(java.util.Collections.nCopies(8, 2), context.getJSONArray("recent8ComponentsInDefinitionOrder")
+            .getJSONArray(1).toJavaList(Integer.class));
+    }
 }

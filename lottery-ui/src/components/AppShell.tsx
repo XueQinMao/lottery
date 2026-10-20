@@ -6,52 +6,37 @@ import SiteNav from "@/components/SiteNav";
 
 const SIDEBAR_KEY = "lottery-ui.sidebar-collapsed";
 
-const PAGES: { match: (pathname: string) => boolean; title: string; sub: string }[] =
+const PAGES: { match: (pathname: string) => boolean; title: string; sub: string; showHeading?: boolean }[] =
   [
     {
-      match: (p) => p === "/",
-      title: "均线分析",
-      sub: "切换近 30/50/100 期；截止期号空=最新，如 2026092 表示含该期往前推",
+      match: (p) => p.startsWith("/number-trend"),
+      title: "号码走势图",
+      sub: "",
+      showHeading: false,
     },
     {
-      match: (p) => p.startsWith("/pattern-trend"),
-      title: "形态指数",
-      sub: "指数 = 实际出现次数 − 理论出现次数（n × p）；命中 +(1-p)，未命中 −p",
-    },
-    {
-      match: (p) => p === "/feature-stats/ratio",
-      title: "质合比 / 奇偶比",
-      sub: "质合比仅红球；奇偶比红蓝分开。Y 轴为个数，虚线为样本均值",
-    },
-    {
-      match: (p) => p === "/feature-stats/tail",
-      title: "尾数趋势",
-      sub: "红球 0尾–9尾个数（号码 % 10）；近 30/50/100 期与截止期号同和值/差值",
-    },
-    {
-      match: (p) => p === "/feature-stats/occurrence",
-      title: "红球形态历史出现",
-      sub: "各比例、区间分别绘图；1=出现，0=未出现，虚线为样本出现率",
-    },
-    {
-      match: (p) => p === "/feature-stats/cold-hot",
-      title: "冷温热趋势",
-      sub: "每期取前 30 期用 ColdHotAnalysisUtils 分类，统计本期开出号码落入冷/温/热的个数",
-    },
-    {
-      match: (p) => p.startsWith("/feature-stats"),
-      title: "和值 / 差值",
-      sub: "X 轴为开奖期号，虚线为样本均值（仅红球）",
+      match: (p) => p.startsWith("/history-trend"),
+      title: "历史开奖趋势",
+      sub: "",
+      showHeading: false,
     },
     {
       match: (p) => p.startsWith("/llm-analysis"),
-      title: "LLM 分析",
-      sub: "最近10期逐项分析形态现象并推演下期，结合杀号、冷热与最近100期开奖",
+      title: "特征预测",
+      sub: "",
+      showHeading: false,
     },
     {
       match: (p) => p.startsWith("/llm-recommend"),
-      title: "LLM推荐",
-      sub: "特征推荐不传预选号码；缓存调优按评分最高或随机取号后再调优",
+      title: "LLM 推荐",
+      sub: "",
+      showHeading: false,
+    },
+    {
+      match: (p) => p.startsWith("/review"),
+      title: "复盘",
+      sub: "",
+      showHeading: false,
     },
   ];
 
@@ -62,6 +47,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     PAGES.find((page) => page.match(pathname)) ?? {
       title: "双色球数据分析",
       sub: "",
+      showHeading: true,
     };
 
   useEffect(() => {
@@ -93,11 +79,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <div className="workspace">
         <header className="topbar">
           <div>
-            <h1>{meta.title}</h1>
-            {meta.sub ? <p className="topbar-sub">{meta.sub}</p> : null}
+            <span>数据分析</span><span className="breadcrumb-divider" aria-hidden="true">/</span><span>{meta.title}</span>
           </div>
         </header>
-        <main id="main" className="workspace-body">
+        <main id="main" className={`workspace-body${pathname.startsWith("/number-trend") ? " workspace-body-wide" : ""}`}>
+          {meta.showHeading !== false && (
+            <div className="page-heading">
+              <h1>{meta.title}</h1>
+              {meta.sub ? <p>{meta.sub}</p> : null}
+            </div>
+          )}
           {children}
         </main>
       </div>

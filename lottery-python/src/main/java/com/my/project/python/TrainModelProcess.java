@@ -2,6 +2,7 @@ package com.my.project.python;
 
 import com.my.project.python.support.PythonUtils;
 import com.my.project.python.support.ResourcePathUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.io.BufferedReader;
@@ -46,16 +47,7 @@ public class TrainModelProcess {
      * @return 训练是否成功
      */
     public static boolean trainModels(String mlFeaturesPath, String historyPath, String modelDir) {
-        Map<String, String> params = new HashMap<>();
-        params.put("--ml-features", mlFeaturesPath);
-        if (historyPath != null && !historyPath.isEmpty()) {
-            params.put("--history", historyPath);
-        }
-        if (modelDir != null && !modelDir.isEmpty()) {
-            params.put("--model-dir", modelDir);
-        }
-
-        return trainModels(params);
+        return trainModels(mlFeaturesPath, historyPath, null, null, modelDir);
     }
 
 
@@ -77,16 +69,16 @@ public class TrainModelProcess {
         Map<String, String> params = new HashMap<>();
         params.put("--ml-features", mlFeaturesPath);
 
-        if (historyPath != null && !historyPath.isEmpty()) {
+        if (StringUtils.isNotEmpty(historyPath)) {
             params.put("--history", historyPath);
         }
-        if (sequenceFeaturesPath != null && !sequenceFeaturesPath.isEmpty()) {
+        if (StringUtils.isNotEmpty(sequenceFeaturesPath)) {
             params.put("--sequence-features", sequenceFeaturesPath);
         }
-        if (markovFeaturesPath != null && !markovFeaturesPath.isEmpty()) {
+        if (StringUtils.isNotEmpty(markovFeaturesPath)) {
             params.put("--markov-features", markovFeaturesPath);
         }
-        if (modelDir != null && !modelDir.isEmpty()) {
+        if (StringUtils.isNotEmpty(modelDir)) {
             params.put("--model-dir", modelDir);
         }
 

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Question } from "@phosphor-icons/react";
 import PatternAnalysisReport from "@/components/PatternAnalysisReport";
+import ZoneTrendReport from "@/components/ZoneTrendReport";
 import type {
   ColdHotAnalysis,
   FeatureForecast,
@@ -419,6 +420,7 @@ function TrendSection({ data }: { data?: TrendAnalysis }) {
 }
 
 export default function AnalysisReport({ data }: { data: LotteryAnalysisResp }) {
+  if (data.zoneTrendAnalysis) return <ZoneTrendReport data={data.zoneTrendAnalysis} />;
   return (
     <div className="report-bento">
       <PatternAnalysisReport features={data.featureAnalysis} records={data.recentDrawRecords} />

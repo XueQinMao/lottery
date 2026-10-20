@@ -5,42 +5,44 @@ import { usePathname } from "next/navigation";
 import {
   Brain,
   ChartLine,
+  ClipboardText,
+  GridFour,
   SidebarSimple,
   Sparkle,
-  SquaresFour,
-  Table,
 } from "@phosphor-icons/react";
 
 const NAV_ITEMS = [
   {
-    href: "/",
-    label: "均线分析",
-    match: (p: string) => p === "/",
+    href: "/number-trend",
+    label: "号码走势图",
+    mobileLabel: "号码走势",
+    match: (p: string) => p.startsWith("/number-trend"),
+    Icon: GridFour,
+  },
+  {
+    href: "/history-trend",
+    label: "历史开奖趋势",
+    mobileLabel: "开奖趋势",
+    match: (p: string) => p.startsWith("/history-trend"),
     Icon: ChartLine,
   },
   {
-    href: "/pattern-trend",
-    label: "形态指数",
-    match: (p: string) => p.startsWith("/pattern-trend"),
-    Icon: SquaresFour,
-  },
-  {
-    href: "/feature-stats",
-    label: "形态统计",
-    match: (p: string) => p.startsWith("/feature-stats"),
-    Icon: Table,
-  },
-  {
     href: "/llm-analysis",
-    label: "LLM 分析",
+    label: "特征预测",
     match: (p: string) => p.startsWith("/llm-analysis"),
     Icon: Brain,
   },
   {
     href: "/llm-recommend",
-    label: "LLM推荐",
+    label: "LLM 推荐",
     match: (p: string) => p.startsWith("/llm-recommend"),
     Icon: Sparkle,
+  },
+  {
+    href: "/review",
+    label: "复盘",
+    match: (p: string) => p.startsWith("/review"),
+    Icon: ClipboardText,
   },
 ];
 
@@ -58,15 +60,18 @@ export default function SiteNav({ collapsed, onToggle }: Props) {
         <span className="brand-mark" aria-hidden="true">
           <span className="brand-dot red" />
           <span className="brand-dot blue" />
+          <span className="brand-dot red bottom" />
+          <span className="brand-dot red bottom-right" />
         </span>
         <span className="brand-copy">
           <strong>双色球</strong>
-          <span>数据分析</span>
+          <span>数据研究室</span>
         </span>
       </Link>
 
       <div className="site-nav-links">
-        {NAV_ITEMS.map(({ href, label, match, Icon }) => {
+        {NAV_ITEMS.map((item) => {
+          const { href, label, match, Icon } = item;
           const active = match(pathname);
           return (
             <Link
@@ -74,14 +79,16 @@ export default function SiteNav({ collapsed, onToggle }: Props) {
               href={href}
               className={`site-nav-link ${active ? "active" : ""}`}
               aria-current={active ? "page" : undefined}
+              aria-label={label}
               title={collapsed ? label : undefined}
             >
               <Icon
                 size={20}
-                weight={active ? "fill" : "regular"}
+                weight="regular"
                 aria-hidden="true"
               />
-              <span>{label}</span>
+              <span className="nav-label-desktop">{label}</span>
+              <span className="nav-label-mobile">{"mobileLabel" in item ? item.mobileLabel : label}</span>
             </Link>
           );
         })}

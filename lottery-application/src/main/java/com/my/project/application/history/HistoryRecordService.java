@@ -4,9 +4,10 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.my.project.infrastructure.persistence.entity.HistoryRecord;
 import com.my.project.application.history.dto.HistoryRecordDto;
 import com.my.project.application.history.vo.ColdHotTrendVo;
+import com.my.project.application.history.vo.DrawTrendVo;
 import com.my.project.application.history.vo.FeatureStatsVo;
 import com.my.project.application.history.vo.PatternTrendVo;
-import com.my.project.application.history.vo.TrendAnalysisVo;
+import com.my.project.application.history.vo.NumberTrendVo;
 
 import java.util.List;
 
@@ -19,6 +20,11 @@ import java.util.List;
  * @since 2025-07-17
  */
 public interface HistoryRecordService{
+
+  /** 按期升序的红球、蓝球特征趋势；冷温热使用每期开奖前 30 期分类。 */
+  DrawTrendVo analyzeDrawTrends(int sampleSize, String endPeriod);
+
+  NumberTrendVo analyzeNumberTrends(int sampleSize, String endPeriod);
 
   void syncHistoryRecords();
 
@@ -41,16 +47,8 @@ public interface HistoryRecordService{
    */
   List<HistoryRecord> getRecordsEndingAt(String endPeriod, int count);
 
-  /**
-   * 分析指定号码的遗漏/趋势指数（基于 {@code LotteryTrendUtils}）。
-   *
-   * @param ballType   red / blue
-   * @param ball       号码（红 1-33，蓝 1-16）
-   * @param sampleSize 最近期数
-   * @param endPeriod  截止期号（含），空则最新
-   * @return 趋势分析结果
-   */
-  TrendAnalysisVo analyzeTrend(String ballType, int ball, int sampleSize, String endPeriod);
+  /** 返回指定期及之前的开奖记录，期号尚未入库时返回空列表。 */
+  List<HistoryRecord> findRecordsEndingAt(String endPeriod, int count);
 
   /**
    * 统计红球和值、跨度、和值相对上一期增长差值、质合比，以及红/蓝球奇偶比。
@@ -62,18 +60,7 @@ public interface HistoryRecordService{
   FeatureStatsVo analyzeFeatureStats(int sampleSize, String endPeriod);
 
     /**
-     * 分析指定形态比例的遗漏与超额指数（基于 {@code LotteryFeatureTrendUtils}）。
-     *
-     * @param feature    oddEven / bigSmall / primeComp / ...
-     * @param ratio      分桶键
-     * @param sampleSize 最近期数
-     * @param endPeriod  截止期号（含），空则最新
-     * @return 形态趋势分析结果
-     */
-    PatternTrendVo analyzePatternTrend(String feature, String ratio, int sampleSize, String endPeriod);
-
-    /**
-     * 与 {@link #analyzePatternTrend(String, String, int, String)} 相同算法，复用已拉取的最近 N 期（最新在前）。
+     * 为 LLM 特征分析生成形态快照，复用已拉取的最近 N 期（最新在前）。
      */
     PatternTrendVo analyzePatternTrend(String feature, String ratio, List<HistoryRecord> latestNewestFirst);
 

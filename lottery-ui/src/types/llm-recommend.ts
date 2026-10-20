@@ -18,8 +18,18 @@ export interface FeatureHitSummary {
   missCount?: number;
 }
 
+export interface FeatureCoverage {
+  code: string;
+  label: string;
+  mainValue: string;
+  alternatives: string[];
+  mainHitBets: number;
+  altHitBets: number;
+}
+
 export interface AdjustedTicket {
   id?: string;
+  category?: "OPTIMIZED" | "RECOMMENDED" | "FULL_MATCH";
   originalRedBalls?: number[];
   originalBlueBall?: number;
   adjustedRedBalls?: number[];
@@ -48,16 +58,21 @@ export interface FinalRecommendation {
   complexTicket?: ComplexTicket;
 }
 
-export type LlmRecommendTaskMode = "FEATURE" | "CACHE";
-
 export type LlmRecommendTaskStatus = "PENDING" | "RUNNING" | "SUCCESS" | "FAILED";
+export type LlmRecommendTaskPhase = "ANALYZING_NUMBER_TREND" | "GENERATING_RECOMMENDATION";
 
 export interface LlmRecommendTask {
   taskId: string;
   status: LlmRecommendTaskStatus;
-  mode?: LlmRecommendTaskMode;
+  useNumberTrend?: boolean;
+  phase?: LlmRecommendTaskPhase;
   message?: string;
   fileName?: string;
+}
+
+export interface NumberTrendObservation {
+  ball: "RED" | "BLUE";
+  number: number;
 }
 
 export interface LotteryAdjustResp {
@@ -66,15 +81,14 @@ export interface LotteryAdjustResp {
   conclusion?: string;
   fileName?: string;
   featureForecast?: FeatureForecast;
+  targetPeriod?: string;
+  sourcePeriod?: string;
+  complexHits?: FeatureCoverage[];
   featureAnalysis?: PatternFeatureAnalysis[];
+  numberTrendObservations?: NumberTrendObservation[];
+  numberTrendImages?: { code: "red" | "blue"; dataUrl: string }[];
   /** 与 adjustedTickets 按下标对齐 */
   adjustedTicketHits?: FeatureHitSummary[];
   /** 与 finalRecommendation.singleTickets 按下标对齐 */
   finalSingleHits?: FeatureHitSummary[];
-}
-
-export interface AdjustHistoryFile {
-  fileName: string;
-  lastModified?: number;
-  size?: number;
 }

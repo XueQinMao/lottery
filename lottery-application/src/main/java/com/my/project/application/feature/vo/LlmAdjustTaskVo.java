@@ -1,6 +1,5 @@
 package com.my.project.application.feature.vo;
 
-import com.my.project.application.feature.enums.LlmAdjustTaskMode;
 import com.my.project.application.feature.enums.LlmAdjustTaskStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -21,8 +20,8 @@ public class LlmAdjustTaskVo {
     private String taskId;
 
     private LlmAdjustTaskStatus status;
-
-    private LlmAdjustTaskMode mode;
+    private boolean useNumberTrend;
+    private Phase phase;
 
     private String message;
 
@@ -32,4 +31,9 @@ public class LlmAdjustTaskVo {
     private Instant createdAt;
 
     private Instant finishedAt;
+
+    public enum Phase {
+        ANALYZING_NUMBER_TREND,
+        GENERATING_RECOMMENDATION
+    }
 }

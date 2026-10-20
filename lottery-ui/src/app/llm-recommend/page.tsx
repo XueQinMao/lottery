@@ -17,28 +17,23 @@ import {
 import type {
   LotteryAdjustResp,
   LlmRecommendTask,
+  LlmRecommendTaskPhase,
 } from "@/types/llm-recommend";
 import type { PredictFileRecord } from "@/types/predict-file-record";
 import { PREDICT_FILE_TYPE } from "@/types/predict-file-record";
 
-const COUNT_OPTIONS = [1, 2, 3, 5];
 const POLL_INTERVAL_MS = 2000;
 const POLL_TIMEOUT_MS = 5 * 60 * 1000;
 
-type RecommendMode = "feature" | "cache";
-
 export default function LlmRecommendPage() {
-  const [mode, setMode] = useState<RecommendMode>("feature");
-  const [count, setCount] = useState(2);
-  const [isTopN, setIsTopN] = useState(true);
-  const [userRequirement, setUserRequirement] = useState("");
   const [data, setData] = useState<LotteryAdjustResp | null>(null);
   const [files, setFiles] = useState<PredictFileRecord[]>([]);
   const [fileLimit, setFileLimit] = useState(HISTORY_PAGE_SIZE);
   const [hasMore, setHasMore] = useState(false);
   const [activeFileName, setActiveFileName] = useState<string | null>(null);
-  const [fromHistory, setFromHistory] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [useNumberTrend, setUseNumberTrend] = useState(false);
+  const [phase, setPhase] = useState<LlmRecommendTaskPhase>();
   const [listLoading, setListLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -50,7 +45,7 @@ export default function LlmRecommendPage() {
   const pollTimerRef = useRef<number | null>(null);
   const pollStartedAtRef = useRef(0);
   const pollInFlightRef = useRef(false);
-  const startPollingRef = useRef<(taskId: string) => void>(() => {});
+  const startPollingRef = useRef<(task: LlmRecommendTask) => void>(() => {});
 
   const loadFiles = useCallback(async (silent = false, limit = HISTORY_PAGE_SIZE) => {
     if (!silent) {
@@ -89,11 +84,10 @@ export default function LlmRecommendPage() {
   }, [fileLimit, hasMore, loadFiles, loadingMore]);
 
   const openHistory = useCallback(
-    async (file: PredictFileRecord, options?: { scroll?: boolean; fromHistory?: boolean }) => {
+    async (file: PredictFileRecord, options?: { scroll?: boolean }) => {
       const requestId = ++requestIdRef.current;
       setDetailLoading(true);
       setError(null);
-      setFromHistory(options?.fromHistory !== false);
       setActiveFileName(file.fileName);
       try {
         const result = await fetchLlmRecommendHistoryDetail(file.fileName);
@@ -138,8 +132,8 @@ export default function LlmRecommendPage() {
   const applyFinishedTask = useCallback(
     async (task: LlmRecommendTask) => {
       stopPolling();
-      setLoading(false);
       if (task.status === "FAILED") {
+        setLoading(false);
         setError(task.message || "推荐失败");
         return;
       }
@@ -155,19 +149,22 @@ export default function LlmRecommendPage() {
             }
           : nextFiles[0]);
       if (!match) {
+        setLoading(false);
         setError("推荐已完成，但未找到结果文件");
         return;
       }
-      await openHistory(match, { fromHistory: false });
+      await openHistory(match);
+      setLoading(false);
     },
     [loadFiles, openHistory, stopPolling],
   );
 
   const startPolling = useCallback(
-    (taskId: string) => {
+    (initialTask: LlmRecommendTask) => {
       stopPolling();
       setLoading(true);
       setError(null);
+      setPhase(initialTask.phase);
       pollStartedAtRef.current = Date.now();
 
       const tick = async () => {
@@ -182,7 +179,8 @@ export default function LlmRecommendPage() {
         }
         pollInFlightRef.current = true;
         try {
-          const task = await fetchLlmRecommendTask(taskId);
+          const task = await fetchLlmRecommendTask(initialTask.taskId);
+          setPhase(task.phase);
           if (task.status === "SUCCESS" || task.status === "FAILED") {
             await applyFinishedTask(task);
           }
@@ -225,7 +223,8 @@ export default function LlmRecommendPage() {
           (running.status === "PENDING" || running.status === "RUNNING");
         if (active && running) {
           skipAutoOpenRef.current = true;
-          startPollingRef.current(running.taskId);
+          setUseNumberTrend(running.useNumberTrend === true);
+          startPollingRef.current(running);
         }
         const result = await loadFiles();
         const first = result[0];
@@ -247,36 +246,27 @@ export default function LlmRecommendPage() {
   }, [loadFiles, openHistory, stopPolling]);
 
   const generate = useCallback(
-    async (
-      nextMode: RecommendMode,
-      size: number,
-      topN: boolean,
-      extraHint: string,
-    ) => {
+    async () => {
       skipAutoOpenRef.current = true;
       requestIdRef.current += 1;
       setLoading(true);
+      setPhase(undefined);
       setError(null);
-      setFromHistory(false);
+      setDetailLoading(false);
       try {
-        const task = await submitLlmRecommendTask({
-          mode: nextMode === "feature" ? "FEATURE" : "CACHE",
-          count: size,
-          isTopN: topN,
-          userRequirement: extraHint,
-        });
+        const task = await submitLlmRecommendTask(useNumberTrend);
         if (task.status === "SUCCESS" || task.status === "FAILED") {
           await applyFinishedTask(task);
           return;
         }
-        startPolling(task.taskId);
+        startPolling(task);
       } catch (e) {
         stopPolling();
         setLoading(false);
         setError(e instanceof Error ? e.message : "下发推荐任务失败");
       }
     },
-    [applyFinishedTask, startPolling, stopPolling],
+    [applyFinishedTask, startPolling, stopPolling, useNumberTrend],
   );
 
   const review = useCallback(
@@ -287,147 +277,35 @@ export default function LlmRecommendPage() {
     [openHistory],
   );
 
-  const activeFile = files.find((item) => item.fileName === activeFileName) ?? null;
+  const progressText = phase === "ANALYZING_NUMBER_TREND"
+    ? "读取下期红球候选…"
+    : phase === "GENERATING_RECOMMENDATION" ? "生成推荐中…" : "提交推荐任务中…";
 
   return (
     <div className="page recommend-page">
       <div className="recommend-workspace">
-        <div className="filter-card recommend-toolbar-card">
-          <div className="recommend-toolbar">
-            <div className="recommend-toolbar-row">
-              <div className="recommend-controls">
-              <div className="recommend-control-group">
-                <span className="recommend-control-label" id="recommend-mode-label">
-                  生成方式
-                </span>
-                <div
-                  className="type-tabs"
-                  role="group"
-                  aria-labelledby="recommend-mode-label"
-                >
-                  <button
-                    type="button"
-                    className={`type-tab ${mode === "feature" ? "active" : ""}`}
-                    onClick={() => setMode("feature")}
-                    aria-pressed={mode === "feature"}
-                  >
-                    特征推荐
-                  </button>
-                  <button
-                    type="button"
-                    className={`type-tab ${mode === "cache" ? "active" : ""}`}
-                    onClick={() => setMode("cache")}
-                    aria-pressed={mode === "cache"}
-                  >
-                    缓存调优
-                  </button>
-                </div>
-              </div>
-              <div className="recommend-control-group">
-                <span className="recommend-control-label" id="recommend-count-label">
-                  组数
-                </span>
-                <div
-                  className="type-tabs"
-                  role="group"
-                  aria-labelledby="recommend-count-label"
-                >
-                  {COUNT_OPTIONS.map((n) => (
-                    <button
-                      key={n}
-                      type="button"
-                      className={`type-tab ${count === n ? "active" : ""}`}
-                      onClick={() => setCount(n)}
-                      aria-pressed={count === n}
-                    >
-                      {n} 组
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {mode === "cache" ? (
-                <div className="recommend-control-group">
-                  <span className="recommend-control-label" id="recommend-pick-label">
-                    预选
-                  </span>
-                  <div
-                    className="type-tabs"
-                    role="group"
-                    aria-labelledby="recommend-pick-label"
-                  >
-                    <button
-                      type="button"
-                      className={`type-tab ${isTopN ? "active" : ""}`}
-                      onClick={() => setIsTopN(true)}
-                      aria-pressed={isTopN}
-                    >
-                      评分最高
-                    </button>
-                    <button
-                      type="button"
-                      className={`type-tab ${!isTopN ? "active" : ""}`}
-                      onClick={() => setIsTopN(false)}
-                      aria-pressed={!isTopN}
-                    >
-                      随机抽取
-                    </button>
-                  </div>
-                </div>
-              ) : null}
+        <div className="recommend-main">
+          <section className="forecast-hero" aria-labelledby="recommend-title">
+            <div className="recommend-heading">
+              <h1 id="recommend-title">LLM 推荐</h1>
+              <p className="muted">结合历史特征与分析结果，探索下一期的号码组合。</p>
             </div>
-              <button
-                type="button"
-                className="primary-btn"
-                onClick={() => void generate(mode, count, isTopN, userRequirement)}
-                disabled={loading}
-                aria-busy={loading}
-              >
+            <div className="recommend-controls">
+              <label className="recommend-trend-option">
+                <input type="checkbox" checked={useNumberTrend} disabled={booting || loading}
+                  onChange={(event) => setUseNumberTrend(event.target.checked)} />
+                参考走势图红球候选
+              </label>
+              <button type="button" className="primary-btn forecast-run" onClick={() => void generate()}
+                disabled={booting || loading} aria-busy={loading}>
                 <Sparkle size={16} weight="fill" aria-hidden="true" />
-                {loading ? "已下发" : "生成推荐"}
+                {loading ? (useNumberTrend ? progressText : "生成中…") : "生成推荐"}
               </button>
             </div>
-            <label className="recommend-hint-field">
-              <span className="recommend-control-label" id="recommend-hint-label">
-                附加要求（可选）
-              </span>
-              <textarea
-                id="recommend-hint"
-                className="recommend-hint-input"
-                aria-labelledby="recommend-hint-label"
-                placeholder="例如：红球和值大于100。要求会与安全网求交，和值仍限制在 90-130。"
-                maxLength={800}
-                rows={2}
-                value={userRequirement}
-                onChange={(e) => setUserRequirement(e.target.value)}
-              />
-            </label>
-          </div>
-          <p className="info-bar">
-            {mode === "feature"
-              ? "特征推荐：不传预选号码（drawRecords 为空），模型按特征报告直接生成所选组数。"
-              : isTopN
-                ? "缓存调优：从缓存取评分最高的所选组数，再交给模型调优。"
-                : "缓存调优：从缓存随机抽取所选组数，再交给模型调优。"}
-            结果写入后台 JSON，可从最近推荐回看。附加要求会拼进模型提示词，但不能突破和值 90-130、跨度 16-28 等硬边界。
-          </p>
-        </div>
-
-        <RecommendHistory
-          files={files}
-          activeFileName={activeFileName}
-          loading={listLoading}
-          listError={listError}
-          disabled={detailLoading}
-          hasMore={hasMore}
-          loadingMore={loadingMore}
-          onSelect={(file) => void review(file)}
-          onLoadMore={() => void loadMore()}
-        />
-
-        <div className="recommend-main">
-          {loading && !data && (
+          </section>
+          {loading && !detailLoading && (
             <div className="status" role="status" aria-atomic="true">
-              任务已下发，请耐心等待
+              {useNumberTrend ? progressText : "任务已下发，请耐心等待"}
             </div>
           )}
           {detailLoading && (
@@ -440,27 +318,33 @@ export default function LlmRecommendPage() {
               {error}
             </div>
           )}
-          {!detailLoading && !error && data && (
+          {!loading && !detailLoading && !error && data && (
             <div id="recommend-report">
-              {fromHistory && activeFile ? (
-                <p className="history-banner" role="status" aria-atomic="true">
-                  正在回看 {activeFile.fileName}
-                </p>
-              ) : null}
-              <RecommendReport data={data} />
+              <RecommendReport key={activeFileName} data={data} />
             </div>
           )}
-          {(booting || listLoading) && !data && !error && !detailLoading && (
+          {!loading && (booting || listLoading) && !data && !error && !detailLoading && (
             <div className="status" role="status" aria-atomic="true">
               正在加载最近推荐...
             </div>
           )}
-          {!loading && !booting && !listLoading && !error && !data && (
+          {!loading && !booting && !listLoading && !detailLoading && !error && !data && (
             <div className="status">
-              选择生成方式和组数后点击「生成推荐」，或从最近推荐回看。
+              点击「生成推荐」，生成 5 组单式和 1 组复式。
             </div>
           )}
         </div>
+        <RecommendHistory
+          files={files}
+          activeFileName={activeFileName}
+          loading={listLoading}
+          listError={listError}
+          disabled={loading || detailLoading}
+          hasMore={hasMore}
+          loadingMore={loadingMore}
+          onSelect={(file) => void review(file)}
+          onLoadMore={() => void loadMore()}
+        />
       </div>
     </div>
   );

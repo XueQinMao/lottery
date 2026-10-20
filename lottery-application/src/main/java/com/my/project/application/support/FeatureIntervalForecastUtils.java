@@ -5,10 +5,14 @@ import com.my.project.llm.bo.FeatureForecastBo;
 import com.my.project.llm.bo.FeatureForecastBo.FeatureForecastItem;
 import com.my.project.llm.bo.LotteryAnalysisReqBo.DrawRecord;
 import com.my.project.application.support.LotteryFeatureTrendUtils.FeatureKind;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -42,6 +46,9 @@ public final class FeatureIntervalForecastUtils {
     private static final Set<String> RARE_SUM_RANGE = Set.of(
         "21-60", "61-66", "67-72", "133-138", "139-144", "145-183");
     private static final Set<String> RARE_ZONE_COUNT = Set.of("0", "5", "6");
+    private static final Set<FeatureKind> NUMERIC_RANGE_KINDS = EnumSet.of(
+        FeatureKind.SPAN, FeatureKind.SUM_TAIL, FeatureKind.ZONE1_COUNT, FeatureKind.ZONE2_COUNT,
+        FeatureKind.ZONE3_COUNT);
 
     private FeatureIntervalForecastUtils() {
     }
@@ -50,10 +57,7 @@ public final class FeatureIntervalForecastUtils {
      * 构建单形态间隔节奏快照（JSON），供 LLM forecastOne 使用。
      */
     public static String buildSnapshot(FeatureKind kind, List<DrawRecord> recordsNewestFirst) {
-        if (recordsNewestFirst == null || recordsNewestFirst.isEmpty()) {
-            throw new IllegalArgumentException("开奖样本不能为空");
-        }
-        List<DrawRecord> chronological = toChronological(recordsNewestFirst);
+        List<DrawRecord> chronological = requireChronologicalSample(recordsNewestFirst);
         List<BucketScore> scores = scoreAllBuckets(kind, chronological);
         String lastValue = LotteryFeatureTrendUtils.extract(
             chronological.getLast().getRedBalls(), chronological.getLast().getBlueBall(), kind);
@@ -100,7 +104,7 @@ public final class FeatureIntervalForecastUtils {
      */
     public static FeatureForecastItem enrichFromSnapshot(FeatureKind kind, FeatureForecastItem llmItem,
         List<DrawRecord> recordsNewestFirst) {
-        if (llmItem == null || recordsNewestFirst == null || recordsNewestFirst.isEmpty()) {
+        if (llmItem == null || CollectionUtils.isEmpty(recordsNewestFirst)) {
             return llmItem;
         }
         List<DrawRecord> chronological = toChronological(recordsNewestFirst);
@@ -122,27 +126,21 @@ public final class FeatureIntervalForecastUtils {
 
     public static void reconcileRedItems(EnumMap<FeatureKind, FeatureForecastItem> items,
         List<DrawRecord> recordsNewestFirst) {
-        if (items == null || recordsNewestFirst == null || recordsNewestFirst.isEmpty()) {
+        if (items == null || CollectionUtils.isEmpty(recordsNewestFirst)) {
             return;
         }
         reconcileRed(items, toChronological(recordsNewestFirst));
     }
 
     public static FeatureForecastItem forecastOneKind(FeatureKind kind, List<DrawRecord> recordsNewestFirst) {
-        if (recordsNewestFirst == null || recordsNewestFirst.isEmpty()) {
-            throw new IllegalArgumentException("开奖样本不能为空");
-        }
-        return forecastOne(kind, toChronological(recordsNewestFirst));
+        return forecastOne(kind, requireChronologicalSample(recordsNewestFirst));
     }
 
     /**
      * 纯 Java 间隔节奏预测（红 11 + 蓝 4，含过滤与自洽）。
      */
     public static FeatureForecastBo forecast(List<DrawRecord> recordsNewestFirst) {
-        if (recordsNewestFirst == null || recordsNewestFirst.isEmpty()) {
-            throw new IllegalArgumentException("开奖样本不能为空");
-        }
-        List<DrawRecord> chronological = toChronological(recordsNewestFirst);
+        List<DrawRecord> chronological = requireChronologicalSample(recordsNewestFirst);
 
         EnumMap<FeatureKind, FeatureForecastItem> items = new EnumMap<>(FeatureKind.class);
         for (FeatureKind kind : FeatureKind.values()) {
@@ -180,6 +178,13 @@ public final class FeatureIntervalForecastUtils {
         return forecast;
     }
 
+    private static List<DrawRecord> requireChronologicalSample(List<DrawRecord> recordsNewestFirst) {
+        if (CollectionUtils.isEmpty(recordsNewestFirst)) {
+            throw new IllegalArgumentException("开奖样本不能为空");
+        }
+        return toChronological(recordsNewestFirst);
+    }
+
     private static List<DrawRecord> toChronological(List<DrawRecord> recordsNewestFirst) {
         List<DrawRecord> chronological = new ArrayList<>(recordsNewestFirst);
         java.util.Collections.reverse(chronological);
@@ -187,14 +192,26 @@ public final class FeatureIntervalForecastUtils {
     }
 
     private static List<BucketScore> scoreAllBuckets(FeatureKind kind, List<DrawRecord> chronological) {
+        List<String> buckets = LotteryFeatureTrendUtils.buckets(kind);
+        Map<String, List<Integer>> hitIndexes = indexBucketHits(kind, chronological);
         List<BucketScore> scores = new ArrayList<>();
-        for (String bucket : LotteryFeatureTrendUtils.buckets(kind)) {
-            scores.add(scoreBucket(kind, bucket, chronological));
+        for (String bucket : buckets) {
+            scores.add(scoreBucket(kind, bucket, hitIndexes.getOrDefault(bucket, List.of()), chronological.size()));
         }
         scores.sort(Comparator.comparingDouble(BucketScore::score).reversed()
             .thenComparing(Comparator.comparingDouble(BucketScore::prior).reversed())
             .thenComparing(BucketScore::ratio));
         return scores;
+    }
+
+    private static Map<String, List<Integer>> indexBucketHits(FeatureKind kind, List<DrawRecord> chronological) {
+        Map<String, List<Integer>> hitIndexes = new HashMap<>();
+        for (int index = 0; index < chronological.size(); index++) {
+            DrawRecord draw = chronological.get(index);
+            String actual = LotteryFeatureTrendUtils.extract(draw.getRedBalls(), draw.getBlueBall(), kind);
+            hitIndexes.computeIfAbsent(actual, ignored -> new ArrayList<>()).add(index);
+        }
+        return hitIndexes;
     }
 
     static boolean eligibleForValue(FeatureKind kind, BucketScore b) {
@@ -272,40 +289,8 @@ public final class FeatureIntervalForecastUtils {
     }
 
     private static BucketScore matchBucket(FeatureKind kind, String value, List<BucketScore> scores) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        String v = value.trim();
-        for (BucketScore s : scores) {
-            if (v.equals(s.ratio())) {
-                return s;
-            }
-        }
-        if (v.matches("\\d+-\\d+")
-            && (kind == FeatureKind.SPAN || kind == FeatureKind.SUM_TAIL
-            || kind == FeatureKind.ZONE1_COUNT || kind == FeatureKind.ZONE2_COUNT
-            || kind == FeatureKind.ZONE3_COUNT)) {
-            int dash = v.indexOf('-');
-            try {
-                int low = Integer.parseInt(v.substring(0, dash));
-                int high = Integer.parseInt(v.substring(dash + 1));
-                BucketScore best = null;
-                for (BucketScore s : scores) {
-                    try {
-                        int n = Integer.parseInt(s.ratio());
-                        if (n >= low && n <= high && (best == null || s.score() > best.score())) {
-                            best = s;
-                        }
-                    } catch (NumberFormatException ignored) {
-                        // skip
-                    }
-                }
-                return best;
-            } catch (NumberFormatException ignored) {
-                return null;
-            }
-        }
-        return null;
+        return ForecastBucketMatcher.match(value, scores, NUMERIC_RANGE_KINDS.contains(kind),
+            BucketScore::ratio, BucketScore::score);
     }
 
     private static FeatureForecastItem forecastOne(FeatureKind kind, List<DrawRecord> chronological) {
@@ -369,34 +354,14 @@ public final class FeatureIntervalForecastUtils {
         item.setReason(buildReason(top, value));
     }
 
-    private static BucketScore scoreBucket(FeatureKind kind, String bucket, List<DrawRecord> chronological) {
-        List<Boolean> hits = new ArrayList<>(chronological.size());
-        for (DrawRecord r : chronological) {
-            String actual = LotteryFeatureTrendUtils.extract(r.getRedBalls(), r.getBlueBall(), kind);
-            hits.add(bucket.equals(actual));
-        }
-        List<Integer> hitIndexes = new ArrayList<>();
-        for (int i = 0; i < hits.size(); i++) {
-            if (Boolean.TRUE.equals(hits.get(i))) {
-                hitIndexes.add(i);
-            }
-        }
-        List<Integer> gaps = new ArrayList<>();
-        for (int i = 1; i < hitIndexes.size(); i++) {
-            gaps.add(hitIndexes.get(i) - hitIndexes.get(i - 1));
-        }
-        List<Integer> recentGaps = tail(gaps, RECENT_GAP_WINDOW);
-
-        int currentOmission;
-        if (hitIndexes.isEmpty()) {
-            currentOmission = chronological.size();
-        } else {
-            currentOmission = chronological.size() - 1 - hitIndexes.getLast();
-        }
-
+    private static BucketScore scoreBucket(FeatureKind kind, String bucket, List<Integer> hitIndexes,
+        int sampleSize) {
+        List<Integer> recentGaps = recentHitGaps(hitIndexes);
+        int lastHit = hitIndexes.isEmpty() ? -1 : hitIndexes.getLast();
+        int currentOmission = sampleSize - 1 - lastHit;
         double prior = LotteryFeatureTrendUtils.theoreticalProb(kind, bucket);
         String gapTrend = classifyTrend(recentGaps);
-        double predictedGap = estimatePredictedGap(recentGaps, gapTrend, chronological.size(), prior);
+        double predictedGap = estimatePredictedGap(recentGaps, gapTrend, sampleSize, prior);
         int eta = (int) Math.round(predictedGap) - currentOmission;
         boolean sampleOk = recentGaps.size() >= MIN_GAPS_FOR_VALUE;
         boolean justAppeared = currentOmission == 0;
@@ -467,7 +432,7 @@ public final class FeatureIntervalForecastUtils {
     }
 
     static double estimatePredictedGap(List<Integer> recentGaps, String gapTrend, int sampleSize, double prior) {
-        if (recentGaps == null || recentGaps.isEmpty()) {
+        if (CollectionUtils.isEmpty(recentGaps)) {
             double theory = prior > 1e-6 ? 1.0 / prior : sampleSize;
             return clamp(theory, 3, sampleSize);
         }
@@ -516,9 +481,7 @@ public final class FeatureIntervalForecastUtils {
         if (ranked.size() < 2) {
             return top.ratio();
         }
-        if (kind != FeatureKind.SPAN && kind != FeatureKind.SUM_TAIL
-            && kind != FeatureKind.ZONE1_COUNT && kind != FeatureKind.ZONE2_COUNT
-            && kind != FeatureKind.ZONE3_COUNT) {
+        if (!NUMERIC_RANGE_KINDS.contains(kind)) {
             return top.ratio();
         }
         BucketScore second = null;
@@ -642,7 +605,7 @@ public final class FeatureIntervalForecastUtils {
 
     private static List<String> prependAlt(String old, List<String> alts) {
         List<String> next = new ArrayList<>();
-        if (old != null && !old.isBlank()) {
+        if (StringUtils.isNotBlank(old)) {
             next.add(old);
         }
         if (alts != null) {
@@ -677,7 +640,7 @@ public final class FeatureIntervalForecastUtils {
     }
 
     private static Integer parseMid(String value) {
-        if (value == null || value.isBlank()) {
+        if (StringUtils.isBlank(value)) {
             return null;
         }
         try {
@@ -694,19 +657,11 @@ public final class FeatureIntervalForecastUtils {
     }
 
     private static String sumRangeHead(String value) {
-        if (value == null) {
-            return null;
+        if (value == null || RARE_SUM_RANGE.contains(value) || !value.matches("\\d+-\\d+")) {
+            return value;
         }
-        if (RARE_SUM_RANGE.contains(value) || value.matches("\\d+-\\d+")) {
-            if (value.matches("\\d+-\\d+") && !RARE_SUM_RANGE.contains(value)) {
-                Integer mid = parseMid(value);
-                if (mid != null && mid < 70) {
-                    return "21-60";
-                }
-            }
-            return value.contains("-") && value.length() <= 7 ? value : value;
-        }
-        return value;
+        Integer mid = parseMid(value);
+        return mid != null && mid < 70 ? "21-60" : value;
     }
 
     private static String buildReason(BucketScore top, String value) {
@@ -716,7 +671,7 @@ public final class FeatureIntervalForecastUtils {
             case "stable" -> "间隔平稳";
             default -> "间隔样本不足";
         };
-        String gaps = top.recentGaps() == null || top.recentGaps().isEmpty()
+        String gaps = CollectionUtils.isEmpty(top.recentGaps())
             ? "无"
             : top.recentGaps().stream().map(String::valueOf).collect(Collectors.joining(","));
         String due = Boolean.TRUE.equals(top.dueWindow()) ? "接入窗口内" : "非窗口";
@@ -726,12 +681,16 @@ public final class FeatureIntervalForecastUtils {
             top.currentOmission(), top.eta(), due, top.score());
     }
 
-    private static List<Integer> tail(List<Integer> list, int n) {
-        if (list == null || list.isEmpty()) {
+    private static List<Integer> recentHitGaps(List<Integer> hitIndexes) {
+        if (hitIndexes.size() < 2) {
             return List.of();
         }
-        int from = Math.max(0, list.size() - n);
-        return new ArrayList<>(list.subList(from, list.size()));
+        int start = Math.max(1, hitIndexes.size() - RECENT_GAP_WINDOW);
+        List<Integer> gaps = new ArrayList<>(hitIndexes.size() - start);
+        for (int i = start; i < hitIndexes.size(); i++) {
+            gaps.add(hitIndexes.get(i) - hitIndexes.get(i - 1));
+        }
+        return gaps;
     }
 
     private static double median(List<Integer> values) {
